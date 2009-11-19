@@ -1,0 +1,94 @@
+12-8-06 - created Dec 8, 2006
+2-5-07 - did some tweaks here and there, made the classes static to comply with E_STRICT
+I also made the one letter function names and created default variable names.
+3-11-07 - added the e function
+5-2-07 - added automatically detecting line and file using the very cool debug_backtrace (
+  thanks us.php.net/manual/en/language.constants.predefined.php#69433) function, so now I
+  don't have to include __LINE__, and __GET__ in all my calls anymore. I also moved line to the third passed in
+  argument and get_defined_vars to the second so the calls will be easier to make with the defined vars.
+  NOTE: I added the internal_depth argument because sometimes I call functions using their aliases (eg out::v
+  instead of out::variable) and needed debug_backtrace to get the correct call in order to print the right
+  line number and file of where the original out call took place. This argument SHOULD NEVER BE included
+  when making an actual call, that is why it is given my private designation of an underscore.
+5-8-07 - added the br command that just prints out a line so I can divide things up easier, I also fixed a bug in the str class
+  where if I called the str function in a function without a file it would give me whatever the main script name was, not the script
+  the str call was actually located in.
+6-18-07 - added calling class::function to the getVarInfo function and got rid of an old echo statement
+6-27-07 - added the ability for br to take a title, also made defined_vars be just the name in a str, so if it isn't an
+  array it will just print it out.
+9-18-07 - added the OUT_HERE global variable to make it easy to call out::h() without having to pass in a number
+11-10-07 - added the global dvars variable so I can make calls like: out::e($variable, out::V()); which didn't work
+  static public $dv = 'get_defined_vars' didn't work either.
+11-24-07 - added the global o function
+1-14-08 - got rid of stuff that didn't really work like the global o function and
+  added the getVariableName function from the d class (http://dbug.ospinto.com).
+  Most of the notes above no longer pertain to this class as I gutted it and simplified
+  it greatly so that it only used getVariableName and nothing else, so you never have to
+  worry about adding var names or anything. Changed getVariableName to getVarInfo        
+2-24-08 - made all classes except e,b, and h private, that means that to pass a var or a string
+  in you would use e (out::e($var), out::e("this is my message"). Changed br to b and changed the old b to bool
+  because out::br was too much effort. Also added support for passing in multiple vars (out::e($one,$two,$three);)
+  you cannot have 2 out calls on the same line and expect it to work as the second call's variables will be
+  named after the first call, such is life!
+2-27-08 - fixed a bug where out::e($val." string val") wouldn't be identified as a string
+3-27-08 - added the f method to log to a file, also cleaned up the code, made it more modular
+  and easier to extend. Also semi-fixed the comma inside a string bug, now everything should pass
+  but something like: " this is a string, $one, $two, 'three'" but how often am I going to do that? 
+4-2-08 - added color highlighting on array keys when outputting to html 
+4-3-08 - added color highlighting to the footer when outputting html
+4-24-08 - added support for out::e('') to create breaks, this is just a shortcut, because it
+  is cooler to do out::e($var1,'',$var2); then out($var1); out::b(); out($var2);. Also, changed the br()
+  function to use str_pad so even with a title, all the lines will be the same size.
+7-21-08 - added the private output function so that I could fix the pre tag problem in one place. Output
+  now handles all the final output stuff so if there needs to be a change in the layout or something, output
+  is the place to look
+8-05-08 - fixed a bug where out::f('') would print html instead of plaintext, it was because the br function 
+  had an extra arg (lines) so I just needed to make it conform to the other internal classes (bool, a, etc)
+  and put lines at the end after out_type. added the out::rf function so that the out file could be removed
+  between tests easily.     
+8-16-08 - changed the func arg parsing from a regex to a state parser, added parseVarNames function
+8-25-08 - fixed a bug where if out was called in an eval codeblock then it would throw a whole bunch of
+  warnings because it couldn't find the varname, also fixed a problem with arrays getting enquoted
+8-28-08 - fixed the enquote problem, ever since I created the enquote function output of certain functions
+  has been messed up (eg, b() output was getting quoted), I finally fixed that by adding a var to info_map
+  so that if it is set to false, the thing won't get enquoted.
+8-30-08 - added support to use an object's __toString method if present
+9-2-08 - made a workaround for printing really large arrays with indexes highlighted, I turned off highlighting
+  for those arrays that fial the preg_replace. 
+9-11-08 - fixed a bug in parseVarNames where if a class->func(...) was passed in it choked, also made array
+  recursive and respect __toString  of everything as it iterates through the array but I don't think I am 
+  happy with the result 
+9-20-08 - fixed some parseVarNames() issues where it wasn't finding the complete var or tons of different
+  types (eg, $obj->func().'string and '.$var.' more string') would mess up, also fixed the issue where empty
+  arrays were considered strings, they now show up as an empty array  
+10-16-08 - fixed small parsing bug in resolveParen
+4-10-09 - tons of bug fixes, and some new features. I fixed aIter() so that it outputted  a little more consistent,
+  it also now prints out how many indexes the array has. Added the t() function will backtrace the function that it was
+  called in, so you can see where it was called from quickly 
+  also fixed:
+  2 - being called from evaled code with more than one var (eg, out::e($var,$var2) will
+  produce warnings 
+  4 - looks like out::e('') is no longer forwarding to out::b() 
+  5 - out::e(request::varHeader('show_bar'),request::varHeader('bar_links')) failed 
+  6 - out::e(strtotime('this tuesday'),$deadline_map_list[0]->nextOccurrence()) failed, it gave the whole thing to the first 
+5-13-09 - added support for NULL, before in v() null just showed up as '', that's no fun    
+  these seemed to already be fixed:
+  4 - request::varContent('_map' was returned for request::varContent('_map') 
+  5 - out::e($file_map->isName($file_map['tmp_name'])) returned $file_map->isName($file_map['mp_name')
+8-25-09 - fixed the switch to string view using type() and:
+  6 - out::e(time::elapsed(empty($input) ? time::stamp(request::vtzOffset()) : $input,time::stamp(request::vtzOffset())) 
+  7 - out::e($var_map['varTmpl']['content_tmpl'],$var_map['varTmpl']['header_tmpl'],$var_map['varTmpl']['footer_tmpl']);
+  8 - out::e(time::full(time(),request::vtzOffset())); 
+  9 - out::e('NO - '.$item_map->title()); 
+9-23-09 - added the public i() function because I was getting annoyed to keep having to look at the symfony documentation
+  to see what functions I had access to, i() will get info about whatever is passed in allowing me to quickly
+  see what methods the object has, etc., added the getDefault() private function     
+9-25-09 - cleaned up i() a bit more, methods are now alphabetical order and non public methods are ignored  
+9-29-09 - added a return type sniffer for methods in i(), it only works if the method has a docblock though 
+10-10-09 - fixed a little bug where array indexes with spaces weren't being highlighted, changed: \[\S+\] to \[[^\]]+\] 
+10-11-09 - added support to turn printing objects on and off when printing arrays 
+10-13-09 - refactored this class to be more modulor and easy to expand, also added all the f* functions to allow
+  anything to be pushed into a file
+10-26-09 - moved pre wrapping and file info appending to out_call, got rid of file support for out_arg.  Fixed some
+  bugs that lingered.
+11-8-09 - added a simple profile p() method
