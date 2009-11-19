@@ -1,0 +1,2208 @@
+<?php
+
+/**
+ *  This is a debug class mostly, designed to ease my echo pains and print things
+ *  out formatted without much work on my part       
+ *
+ *  
+ *  EXAMPLE (using this class):
+ *    out::e($variable); // that's it
+ *    out::h(1); // prints 'here 1'
+ *    out::b('title',5); // prints 5 lines of = with title in the middle, just try it and you'll understand 
+ *    out::i($variable); // prints out information about the $variable
+ *    
+ *    use any of the f* functions (eg, fe()) to do the same thing as their countarparts (eg, fe() is identical
+ *    to e()) but put the output into a file
+ *    
+ *  KNOWN BUGS:
+ *    1 - 2 function calls on the same line (eg, out::e($one); out::e($two)) the second
+ *         function will get $one as its var name. This could probably be solved by having a static map that
+ *         holds how many times out has been called from a given file:line combination, it would increment everytime
+ *         it is called, so then you could split the line on the semi-colon and only look at the count index of the split
+ *         array., so if you hade something like: out::e($one); out::e($two); then when you got to out::e($two); the 
+ *         count_map would already have 1 for out::e($one); so you could split on the semi-colon and then just look
+ *         at index 1 of the split array, then increment the count for the file:line in count_map 
+ *    2 - index highlighting on arrays doesn't work if there are a ton of indexes to be highlighted)
+ *    3 - out::e('this is a '    .    ' concatenated string'); will fail because whitespace isn't checked when
+ *        deciding if a string is concatenated
+ *    4 - out::e('Current time: '.time::format('l j M Y, g:ia',time::stamp($gmt_offset))); fails   
+ */         
+/* Changelog...
+12-8-06 - created Dec 8, 2006
+2-5-07 - did some tweaks here and there, made the classes static to comply with E_STRICT
+I also made the one letter function names and created default variable names.
+3-11-07 - added the e function
+5-2-07 - added automatically detecting line and file using the very cool debug_backtrace (
+  thanks us.php.net/manual/en/language.constants.predefined.php#69433) function, so now I
+  don't have to include __LINE__, and __GET__ in all my calls anymore. I also moved line to the third passed in
+  argument and get_defined_vars to the second so the calls will be easier to make with the defined vars.
+  NOTE: I added the internal_depth argument because sometimes I call functions using their aliases (eg out::v
+  instead of out::variable) and needed debug_backtrace to get the correct call in order to print the right
+  line number and file of where the original out call took place. This argument SHOULD NEVER BE included
+  when making an actual call, that is why it is given my private designation of an underscore.
+5-8-07 - added the br command that just prints out a line so I can divide things up easier, I also fixed a bug in the str class
+  where if I called the str function in a function without a file it would give me whatever the main script name was, not the script
+  the str call was actually located in.
+6-18-07 - added calling class::function to the getVarInfo function and got rid of an old echo statement
+6-27-07 - added the ability for br to take a title, also made defined_vars be just the name in a str, so if it isn't an
+  array it will just print it out.
+9-18-07 - added the OUT_HERE global variable to make it easy to call out::h() without having to pass in a number
+11-10-07 - added the global dvars variable so I can make calls like: out::e($variable, out::V()); which didn't work
+  static public $dv = 'get_defined_vars' didn't work either.
+11-24-07 - added the global o function
+1-14-08 - got rid of stuff that didn't really work like the global o function and
+  added the getVariableName function from the d class (http://dbug.ospinto.com).
+  Most of the notes above no longer pertain to this class as I gutted it and simplified
+  it greatly so that it only used getVariableName and nothing else, so you never have to
+  worry about adding var names or anything. Changed getVariableName to getVarInfo        
+2-24-08 - made all classes except e,b, and h private, that means that to pass a var or a string
+  in you would use e (out::e($var), out::e("this is my message"). Changed br to b and changed the old b to bool
+  because out::br was too much effort. Also added support for passing in multiple vars (out::e($one,$two,$three);)
+  you cannot have 2 out calls on the same line and expect it to work as the second call's variables will be
+  named after the first call, such is life!
+2-27-08 - fixed a bug where out::e($val." string val") wouldn't be identified as a string
+3-27-08 - added the f method to log to a file, also cleaned up the code, made it more modular
+  and easier to extend. Also semi-fixed the comma inside a string bug, now everything should pass
+  but something like: " this is a string, $one, $two, 'three'" but how often am I going to do that? 
+4-2-08 - added color highlighting on array keys when outputting to html 
+4-3-08 - added color highlighting to the footer when outputting html
+4-24-08 - added support for out::e('') to create breaks, this is just a shortcut, because it
+  is cooler to do out::e($var1,'',$var2); then out($var1); out::b(); out($var2);. Also, changed the br()
+  function to use str_pad so even with a title, all the lines will be the same size.
+7-21-08 - added the private output function so that I could fix the pre tag problem in one place. Output
+  now handles all the final output stuff so if there needs to be a change in the layout or something, output
+  is the place to look
+8-05-08 - fixed a bug where out::f('') would print html instead of plaintext, it was because the br function 
+  had an extra arg (lines) so I just needed to make it conform to the other internal classes (bool, a, etc)
+  and put lines at the end after out_type. added the out::rf function so that the out file could be removed
+  between tests easily.     
+8-16-08 - changed the func arg parsing from a regex to a state parser, added parseVarNames function
+8-25-08 - fixed a bug where if out was called in an eval codeblock then it would throw a whole bunch of
+  warnings because it couldn't find the varname, also fixed a problem with arrays getting enquoted
+8-28-08 - fixed the enquote problem, ever since I created the enquote function output of certain functions
+  has been messed up (eg, b() output was getting quoted), I finally fixed that by adding a var to info_map
+  so that if it is set to false, the thing won't get enquoted.
+8-30-08 - added support to use an object's __toString method if present
+9-2-08 - made a workaround for printing really large arrays with indexes highlighted, I turned off highlighting
+  for those arrays that fial the preg_replace. 
+9-11-08 - fixed a bug in parseVarNames where if a class->func(...) was passed in it choked, also made array
+  recursive and respect __toString  of everything as it iterates through the array but I don't think I am 
+  happy with the result 
+9-20-08 - fixed some parseVarNames() issues where it wasn't finding the complete var or tons of different
+  types (eg, $obj->func().'string and '.$var.' more string') would mess up, also fixed the issue where empty
+  arrays were considered strings, they now show up as an empty array  
+10-16-08 - fixed small parsing bug in resolveParen
+4-10-09 - tons of bug fixes, and some new features. I fixed aIter() so that it outputted  a little more consistent,
+  it also now prints out how many indexes the array has. Added the t() function will backtrace the function that it was
+  called in, so you can see where it was called from quickly 
+  also fixed:
+  2 - being called from evaled code with more than one var (eg, out::e($var,$var2) will
+  produce warnings 
+  4 - looks like out::e('') is no longer forwarding to out::b() 
+  5 - out::e(request::varHeader('show_bar'),request::varHeader('bar_links')) failed 
+  6 - out::e(strtotime('this tuesday'),$deadline_map_list[0]->nextOccurrence()) failed, it gave the whole thing to the first 
+5-13-09 - added support for NULL, before in v() null just showed up as '', that's no fun    
+  these seemed to already be fixed:
+  4 - request::varContent('_map' was returned for request::varContent('_map') 
+  5 - out::e($file_map->isName($file_map['tmp_name'])) returned $file_map->isName($file_map['mp_name')
+8-25-09 - fixed the switch to string view using type() and:
+  6 - out::e(time::elapsed(empty($input) ? time::stamp(request::vtzOffset()) : $input,time::stamp(request::vtzOffset())) 
+  7 - out::e($var_map['varTmpl']['content_tmpl'],$var_map['varTmpl']['header_tmpl'],$var_map['varTmpl']['footer_tmpl']);
+  8 - out::e(time::full(time(),request::vtzOffset())); 
+  9 - out::e('NO - '.$item_map->title()); 
+9-23-09 - added the public i() function because I was getting annoyed to keep having to look at the symfony documentation
+  to see what functions I had access to, i() will get info about whatever is passed in allowing me to quickly
+  see what methods the object has, etc., added the getDefault() private function     
+9-25-09 - cleaned up i() a bit more, methods are now alphabetical order and non public methods are ignored  
+9-29-09 - added a return type sniffer for methods in i(), it only works if the method has a docblock though 
+10-10-09 - fixed a little bug where array indexes with spaces weren't being highlighted, changed: \[\S+\] to \[[^\]]+\] 
+10-11-09 - added support to turn printing objects on and off when printing arrays 
+10-13-09 - refactored this class to be more modulor and easy to expand, also added all the f* functions to allow
+  anything to be pushed into a file
+10-26-09 - moved pre wrapping and file info appending to out_call, got rid of file support for out_arg.  Fixed some
+  bugs that lingered.
+11-8-09 - added a simple profile p() method
+*/
+
+class out {
+  
+  /**
+   *  used internally to tell {@link put()} to output to std out
+   */     
+  const OUT_SCREEN = 0;
+  
+  /**
+   *  used internally to tell {@link put()} to output to the $OUT_TO specified file
+   */
+  const OUT_FILE = 1;        
+  
+  /**
+   *  hold the default out type
+   *  
+   *  can be any value of OUT_*
+   *  @var  integer         
+   */     
+  private static $OUT_DEFAULT = -1;
+  
+  /**
+   *  hold the default way to treate objects when printing them as arrays
+   *  
+   *  @var  boolean
+   */     
+  private static $PRINT_OBJECTS = true;
+  
+  /**
+   *  if you use the @link *f() functions then the name of the file outputted
+   *  will be this value, by default this is set to CURRENT_WORKING_DIR/out.txt  
+   *  @var  string
+   */        
+  private static $OUT_TO = 'out.txt';
+  
+  /**
+   *  hold info for the {@link p()} calls 
+   *     
+   *  @var  array
+   */
+  private static $PROFILE_MAP = array();
+
+  /** php 5.3. feature...
+  static function __callstatic($func,$args){
+    new d($func);
+    new d($args);
+  }//method
+  **/
+
+  /**
+   *  remove $OUT_TO file
+   *
+   *  deletes the out file, this is handy if you want to check output on every test
+   *  so you don't have to manually delete the OUT_FILE...
+   *  
+   *  @return boolean               
+   */
+  static function fr(){ return is_file(self::$OUT_TO) ? unlink(self::$OUT_TO) : true; }//method
+
+  /**
+   *  set where the *f should write to, currently this is a path
+   *  
+   *  later this can be expanded to things like email addresses or urls
+   *  
+   *  @param  string  $name the name of the file where output should be written
+   */
+  static function to($name){
+  
+    // canary...
+    if(empty($name)){ return; }//if
+  
+    $path = dirname($name);
+  
+    // make sure the path is a valid directory, create it if it isn't...
+    if(!is_dir($path)){
+      if(!mkdir($path,0755,true)){
+        throw new Exception(sprintf('%s - mkdir("%s") failed',__METHOD__,$path));
+      }//if
+    }//if
+    
+    if(!is_writable($path)){
+      throw new Exception(sprintf('%s - "%s" is not writeable',__METHOD__,$path));
+    }//if
+  
+    self::$OUT_TO = $name;
+  
+  }//method
+
+  /**
+   *  similar to {@link e()} but outputs to a file instead
+   *  
+   *  outputs to a file instead of stdout, the out.txt file will be in the current working directory   
+   *  usually whatever directory the php file that is calling out is in.
+   */
+  static function fe(){
+    $func_arg_list = func_get_args();
+    self::put(self::eHandle(__METHOD__,$func_arg_list),self::OUT_FILE);
+  }//method
+
+  /**
+   *  print anything to the screen, e is a catchall for everything
+   *  
+   *  to use this function: $var = 'happy'; out::e($var);
+   *  
+   *  @param  mixed $args,... 1 or more variables that should be printed out
+   */
+  static function e(){
+    $func_arg_list = func_get_args();
+    self::put(self::eHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
+  }//method
+  
+  /**
+   *  handles the e* calls
+   *  
+   *  @param  string  $method the externally called method
+   *  @param  array $func_arg_list  the args passed into $method
+   *  @return out_call   
+   */
+  private static function eHandle($method,$func_arg_list){
+    return self::getCall($method,$func_arg_list);
+  }//method
+  
+  /**
+   *  similar to {@link b()} but outputs to a file instead
+   */        
+  static function fb(){
+    $func_arg_list = func_get_args();
+    self::put(self::bHandle(__METHOD__,$func_arg_list),self::OUT_FILE);
+  }//method
+  
+  /**
+   *  prints a break/divider of =
+   *  
+   *  @param  mixed $args,... possible values:
+   *                            - 1 arg = either a title or how many lines you want (if int val)
+   *                            - 2args = $title,$lines               
+   */
+  static function b(){
+    $func_arg_list = func_get_args();
+    self::put(self::bHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
+  }//method
+  
+  /**
+   *  handles the b* calls
+   *  
+   *  @param  string  $method the externally called method
+   *  @param  array $func_arg_list  the args passed into $method
+   *  @return out_call   
+   */
+  private static function bHandle($method,$func_arg_list){
+  
+    $call_handler = self::getCall($method,$func_arg_list);
+    $title = '';
+    $lines = 1;
+    if(isset($func_arg_list[1])){
+      $title = $func_arg_list[0];
+      $lines = $func_arg_list[1];
+    }else{
+    
+      if(isset($func_arg_list[0])){
+      
+        if(is_int($func_arg_list[0])){
+          $lines = $func_arg_list[0];
+        }else{
+          $title = $func_arg_list[0];
+        }//if/else
+        
+      }//if
+    
+    }//if/else
+    
+    $arg_handler = new out_arg($lines,$title);
+    $arg_handler->type(out_arg::TYPE_BREAK);
+    $call_handler->set($arg_handler);
+    
+    return $call_handler;
+  
+  }//method
+  
+  /**
+   *  similar to {@link i()} but outputs to a file instead
+   */
+  static function fi(){
+    $func_arg_list = func_get_args();
+    self::put(self::iHandle(__METHOD__,$func_arg_list),self::OUT_FILE);
+  }//method
+
+  /**
+   *  print info on the passed in $args
+   *  
+   *  to use this function: $var = 'happy'; out::i($var);
+   *  
+   *  @param  mixed $args,... 1 or more variables that should be printed out
+   */
+  static function i(){
+    $func_arg_list = func_get_args();
+    self::put(self::iHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
+  }//method
+  
+  /**
+   *  handles the i* calls
+   *  
+   *  @param  string  $method the externally called method
+   *  @param  array $func_arg_list  the args passed into $method
+   *  @return out_call   
+   */
+  private static function iHandle($method,$func_arg_list){
+  
+    $call_handler = self::getCall($method,$func_arg_list);
+    
+    // we only want info on the object printed out...
+    $config = $call_handler->config();
+    $config->outInfo(true);
+    $call_handler->config($config);
+    return $call_handler;
+    
+  }//method
+  
+  /**
+   *  similar to {@link c()} but outputs to a file instead
+   */
+  static function fc(){
+    $func_arg_list = func_get_args();
+    self::put(self::cHandle(__METHOD__,$func_arg_list),self::OUT_FILE);
+  }//method
+
+  /**
+   *  get character information of the passed in string args
+   *  
+   *  to use this function: $var = 'happy'; out::c($var);
+   *  
+   *  @param  mixed $args,... 1 or more variables that should be printed out
+   */
+  static function c(){
+    $func_arg_list = func_get_args();
+    self::put(self::cHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
+  }//method
+  
+  /**
+   *  handles the c* calls
+   *  
+   *  @param  string  $method the externally called method
+   *  @param  array $func_arg_list  the args passed into $method
+   *  @return out_call   
+   */
+  private static function cHandle($method,$func_arg_list){
+  
+    $call_handler = self::getCall($method,$func_arg_list);
+    
+    // we only want info on the object printed out...
+    $config = $call_handler->config();
+    $config->outChar(true);
+    $call_handler->config($config);
+    return $call_handler;
+    
+  }//method
+  
+  /**
+   *  similar to {@link t()} but outputs to a file instead
+   */
+  static function ft(){
+    self::put(self::tHandle(__METHOD__),self::OUT_FILE);
+  }//method
+
+  /**
+   *  print out the call backtrace history
+   *  
+   *  @since  4-10-09
+   */ 
+  static function t(){
+    self::put(self::tHandle(__METHOD__),self::OUT_SCREEN);
+  }//method
+  
+  /**
+   *  handles the t* calls
+   *  
+   *  @param  string  $method the externally called method
+   *  @param  array $func_arg_list  the args passed into $method
+   *  @return out_call   
+   */
+  private static function tHandle($method,$func_arg_list = array()){
+    
+    $call_handler = self::getCall($method,$func_arg_list);
+    
+    $arg_handler = new out_arg('',$call_handler->outTrace());
+    $arg_handler->type(out_arg::TYPE_STRING_GENERATED);
+    $call_handler->set($arg_handler);
+    return $call_handler;
+    
+  }//method
+  
+  
+  /**
+   *  similar to {@link m()} but outputs to a file instead
+   */
+  static function fm(){
+    $func_arg_list = func_get_args();
+    self::put(self::mHandle(__METHOD__,$func_arg_list),self::OUT_FILE);
+  }//method
+
+  /**
+   *  given an array of objects, print out the output of the methods given      
+   *  
+   *  @since  11-9-09
+   *  @param  mixed $arg,...  first passed in argument is an array of objects, every other passed
+   *                          in argument is the name of a method of the objects
+   */ 
+  static function m(){
+    $func_arg_list = func_get_args();
+    self::put(self::mHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
+  }//method
+  
+  /**
+   *  handles the m* calls
+   *  
+   *  @todo allow the method names to be an array were the first index is the name and
+   *        the second -> N is the arguments to pass into the method (eg, array('method',$arg1,$arg2,...))   
+   *      
+   *  @param  string  $method the externally called method
+   *  @param  array $func_arg_list  the args passed into $method
+   *  @return out_call   
+   */
+  private static function mHandle($method,$func_arg_list = array()){
+    
+    $call_handler = null;
+    $obj_list = $func_arg_list[0];
+    $method_list = array_slice($func_arg_list,1);
+    
+    if(is_array($obj_list) && !empty($method_list)){
+      
+      $call_handler = self::getCall($method);
+      $format_handler = new out_format($call_handler->config());
+      $output = array();
+      
+      foreach($obj_list as $key => $obj){
+      
+        $output[] = sprintf('%d - %s',$key,$format_handler->wrap('span',get_class($obj),out_config::COLOR_INDEX));
+      
+        foreach($method_list as $method){
+        
+          if(method_exists($obj,$method)){
+          
+            $arg_handler = new out_arg(sprintf('->%s()',$method),call_user_func(array($obj,$method)));
+            $arg_handler->config($call_handler->config());
+            $output[] = $format_handler->indent("\t",$arg_handler->out());
+            
+          }else{
+            $output[] = $format_handler->indent("\t",sprintf('->%s() undefined',$method));
+          }//if/else
+        
+        }//foreach
+      
+      }//foreach
+      
+      $output[] = '';
+      
+      $arg_handler = new out_arg('',join("\r\n",$output));
+      $arg_handler->type(out_arg::TYPE_STRING_GENERATED);
+      $call_handler->set($arg_handler);
+      
+    }//if
+      
+    return $call_handler;
+    
+  }//method
+  
+  
+  /**
+   *  similar to {@link p()} but outputs to a file instead
+   */
+  static function fp($title = ''){
+    self::put(self::pHandle(__METHOD__,$title),self::OUT_FILE);
+  }//method
+
+  /**
+   *  some simple profiling
+   *  
+   *  this method goes in calls of 2, so the first call activates it, the second
+   *  will print out the execution time with the passed in title(s)       
+   *  
+   *  @since  11-08-09
+   */ 
+  static function p($title = ''){
+    self::put(self::pHandle(__METHOD__,$title),self::OUT_SCREEN);
+  }//method
+  
+  /**
+   *  handles the p* calls
+   *  
+   *  @param  string  $method the externally called method
+   *  @param  string  $title  the title of the profile
+   *  @return out_call   
+   */
+  private static function pHandle($method,$title){
+    
+    $ret_call = null;
+    if(empty(self::$PROFILE_MAP)){
+      
+      $profile_map = array();
+      $call_handler = self::getCall($method);
+      $profile_map['start_path'] = sprintf('%s:%s',$call_handler->file()->path(),$call_handler->file()->line());
+      $profile_map['start'] = microtime(true);
+      $profile_map['title'] = $title;
+      self::$PROFILE_MAP = $profile_map;
+    
+    }else{
+    
+      $profile_map = self::$PROFILE_MAP;
+      $stop = microtime(true);
+      $call_handler = self::getCall($method);
+      $format_handler = new out_format($call_handler->config());
+      
+      // get the execution time in milliseconds...
+      $time = round((($stop - $profile_map['start']) * 1000),2);
+      
+      // get the best title...
+      if(empty($title)){
+        $title = empty($profile_map['title']) ? 'Profile' : $profile_map['title'];
+      }else{
+        if(!empty($profile_map['title'])){
+          $title = sprintf('%s -> %s',$profile_map['title'],$title);
+        }//if/else
+      }//if/else
+      
+      $title = $format_handler->wrap('b',$title);
+    
+      $start_file = new out_file($profile_map['start_path']);
+      $start_file->config($call_handler->config());
+    
+      $arg_handler = new out_arg('',
+        sprintf("%s = %s ms\r\n  start: %s\r\n",
+          $title,
+          $time,
+          $start_file->out()
+        )
+      );
+      
+      $arg_handler->type(out_arg::TYPE_STRING_GENERATED);
+      $call_handler->set($arg_handler);
+      self::$PROFILE_MAP = array();
+      $ret_call = $call_handler;
+    
+    }//if/else
+    
+    return $ret_call;
+    
+  }//method
+  
+  
+  /**
+   *  similar to {@link h()} but outputs to a file instead
+   */
+  static function fh($count = 0){
+    self::put(self::hHandle(__METHOD__,$count),self::OUT_FILE);
+  }//method
+
+  /**
+   *  prints here and the count, or the line number is count is 0, useful for
+   *  finding where in the code the error is thrown...
+   *
+   *  @param  integer $count  the count you want
+   */
+  static function h($count = 0){
+    self::put(self::hHandle(__METHOD__,$count),self::OUT_SCREEN);
+  }//method
+  
+  /**
+   *  handles the t* calls
+   *  
+   *  @param  string  $method the externally called method
+   *  @return out_call   
+   */
+  private static function hHandle($method,$count = 0){
+  
+    $call_handler = self::getCall($method);
+    $count = empty($count) ? $call_handler->file()->line() : $count;
+    
+    $arg_handler = new out_arg('',sprintf('here %d',$count));
+    $arg_handler->type(out_arg::TYPE_STRING_LITERAL);
+    $call_handler->set($arg_handler);
+    return $call_handler;
+    
+  }//method
+  
+  /**
+   *  this is just a shortcut method because out::isHtml(false) is so much easier
+   *  than out::setType(out_config::OUT_TXT);
+   *  
+   *  @param  boolean $bool true to turn html on, false to turn to plain text
+   */
+  static function isHtml($bool){
+  
+    if($bool){
+      self::setType(out_config::OUT_HTML);
+    }else{
+      self::setType(out_config::OUT_TXT);
+    }//if/else
+  
+  }//method
+  
+  /**
+   *  set the output type for the class, currently this is private but in the future
+   *  more formats might be supported (eg, xml,json) which would make this function
+   *  more important, right now though {@link isHtml()} is enough for the class
+   */
+  private static function setType($type){
+    self::$OUT_DEFAULT = $type;
+  }//method
+  
+  /**
+   *  set whether out should bother printing objects or just print what type of object they are
+   * 
+   *  this is to limit frustration when you are working with a lot of huge objects which are impractical to
+   *  print out, if you still need to see what is in the object then use {@link i()} as that just prints
+   *  info about the object and always works
+   *  
+   *  @param  boolean                  
+   */
+  static function setPrintObject($bool){
+    self::$PRINT_OBJECTS = $bool;
+  }//method
+  
+  /**
+   *  gets the current configuration object for $this class
+   *  
+   *  @return out_config  the current configuration      
+   */
+  private static function getConfig(){
+  
+    $config = new out_config();
+    $config->outType(self::$OUT_DEFAULT);
+    $config->outObject(self::$PRINT_OBJECTS);
+    return $config;
+  
+  }//method
+  
+  /**
+   *  handles output of the $call_handler
+   *  
+   *  @param  out_call  $call_handler the call object with all the call's info to be output 
+   *  @param  integer $out_type how you want the output handled       
+   *  @return boolean
+   */
+  private static function put($call_handler,$out_type = self::OUT_SCREEN){
+  
+    // canary...
+    if(empty($call_handler)){ return false; }//if
+  
+    switch($out_type){
+    
+      case self::OUT_SCREEN:
+  
+        echo $call_handler;
+        break;
+        
+      case self::OUT_FILE:
+      
+        // we want plain text for the file...
+        $call_handler->config()->outType(out_config::OUT_TXT);
+      
+        // first get the args from the call handler...
+        $arg_list = $call_handler->get();
+        // now combine the args with a generated break with the date as a title for a nice timestamp in the output file...
+        $b_call_handler = self::bHandle(__METHOD__,array(date(DATE_RFC822),3));
+        $arg_list = array_merge($b_call_handler->get(),$arg_list);
+        $call_handler->set($arg_list);
+        file_put_contents(self::$OUT_TO,$call_handler->out(),(FILE_APPEND | LOCK_EX));
+        break;
+        
+    }//switch
+    
+    return true;
+  
+  }//method
+  
+  /**
+   *  gets the call handler that contains all the information for the call
+   *  
+   *  @param  atring  $method the external method that was called
+   *  @param  array $func_arg_list  the values of all the passed in args for the external $method call
+   *  @return out_call
+   */        
+  private static function getCall($method,$func_arg_list = array()){
+    
+    $call_handler = new out_call($method,$func_arg_list); 
+    $call_handler->config(self::getConfig());
+  
+    return $call_handler;
+    
+  }//method
+
+
+
+}//class
+
+class out_config_base extends out_base {
+
+  /**
+   *  get/set an out_config object
+   *  
+   *  @param  out_config  $val      
+   *  @return out_config  null if no $val has been set before
+   */
+  function config($val = null){
+  
+    $default_val = null;
+    if($val === null){
+      $default_val = new out_config();
+    }//if
+  
+    return $this->val('out_config_base::config',$val,$default_val);
+  
+  }//method
+  function hasConfig(){ return $this->has('out_config_base::config'); }//method
+
+}//class
+
+/**
+ *  the base class for all the getting/setting out_* classes
+ *  
+ *  @version 0.1
+ *  @author Jay Marcyes {@link http://marcyes.com}
+ *  @since 10-13-09
+ *  @project out
+ ******************************************************************************/   
+class out_base {
+
+  /**
+   *  holds all the values this instance can set
+   *
+   */        
+  protected $val_map = array();
+
+  /**
+   *  blanket function that does the getting/setting of values.
+   *  
+   *  if $val is null, then the $key's current value is checked if it exists, if
+   *  it doesn't exist then $default_val is returned
+   *  @access private   
+   *  
+   *  @param  string|integer  $key  the key whose value you want to fetch
+   *  @param  mixed $val  the val you want to set key to, if null then key is returned
+   *  @Param  mixed $default_val  if $key isn't found, then return $default_val   
+   *  @return mixed if $val is null then the $key's val is returned, otherwise returns nothing
+   */     
+  protected function val($key,$val = null,$default_val = null){
+    if($val === null){
+      return isset($this->val_map[$key]) ? $this->val_map[$key] : $default_val; 
+    }else{
+      $this->val_map[$key] = $val;
+    }//if/else
+  }//method
+  
+  /**
+   *  clear a $key from the {@link $val_map}
+   */
+  protected function clear($key){
+    if(isset($this->val_map[$key])){ unset($this->val_map[$key]); }//if
+  }//method
+  
+  /**
+   *  check if a given key is in the {@link $val_map} and non-empty
+   *  @return boolean true if key exists and is non-empty
+   */
+  protected function has($key){
+    return !empty($this->val_map[$key]);
+  }//method
+
+}//class
+
+/**
+ *  handle all the information of the external out call
+ *  
+ *  for a call like out::e($var1,$var2,$var3)) this class would have the method() (out::e)
+ *  and the names and values of the 3 passed in $var variables. 
+ *  
+ *  @version 0.1
+ *  @author Jay Marcyes {@link http://marcyes.com}
+ *  @since 10-13-09
+ *  @package  out 
+ ******************************************************************************/    
+class out_call extends out_config_base implements IteratorAggregate {
+
+  function __construct($method = '',$arg_val_list = array()){
+
+    $this->set($this->parse($method,$arg_val_list));
+  
+  }//method
+  
+  function file($val = null){ return $this->val('file',$val,null); }//method
+  function hasFile(){ return $this->has('file'); }//method
+  
+  /**
+   *  return a stack trace of the current call
+   *  
+   *  @return string  a nicely formatted stacktrace suitable for output
+   */
+  function outTrace(){
+  
+    // canary...
+    if(!$this->hasTrace()){ return ''; }//if
+  
+    $format_handler = new out_format($this->config());
+  
+    $trace_list = $this->trace();
+    
+    $trace_lines = array();
+    
+    $method = empty($trace_list[1]) ? 'unknown::unknown()' : $trace_list[1]->getMethod();
+    $trace_lines[] = $format_handler->wrap('b',$method);
+    $trace_lines[] = "\tbacktrace:";
+    
+    foreach($trace_list as $key => $file_map){
+    
+      $file_map->config($this->config());
+      $trace_lines[] = sprintf("\t\t%s - %s",$key,$file_map->out(false,true));
+    
+    }//foreach
+    
+    $trace_lines[] = ''; // we want a newline at the end also
+    
+    return implode("\r\n",$trace_lines);
+    
+  }//method
+  
+  function method($val = null){ return $this->val('out_args::method',$val,''); }//method
+  function hasMethod(){ return $this->has('out_args::method'); }//method
+  
+  function trace($val = null){ return $this->val('out_args::trace_list',$val,array()); }//method
+  function hasTrace(){ return $this->has('out_args::trace_list'); }//method
+  
+  function get(){ return $this->val('out_args::arg_list',null,array()); }//if
+  
+  function set($arg){
+  
+    if(is_array($arg)){
+    
+      foreach(array_keys($arg) as $key){
+        $arg[$key]->config($this->config());
+      }//foreach
+    
+      $this->val('out_args::arg_list',$arg,array());
+      
+    }else{
+    
+      if($arg instanceof out_arg){
+      
+        $this->set(array($arg));
+      
+      }//if
+    
+    }//if/else
+  
+  }//method
+  
+  function add($arg){
+  
+    if(is_array($arg)){
+    
+      $arg_list = $this->get();
+      $this->set(array_merge($arg_list,$arg));
+      
+    }else{
+    
+      if($arg instanceof out_arg){
+      
+        $arg_list = $this->get();
+        $arg_list[] = $arg;
+        $this->set($arg_list);
+      
+      }//if
+    
+    }//if/else
+
+  }//method
+  
+  function config($val = null){
+  
+    $ret_val = parent::config($val);
+  
+    if($val !== null){
+    
+      // update the config and file into all the args...
+      $this->file()->config($val);
+      
+      $arg_list = $this->get();
+      $this->set($arg_list);
+    
+    }//if
+    
+    return $ret_val;
+  
+  }//method
+  
+  function __toString(){ return $this->out(); }//method
+  function out(){
+  
+    $ret_str = array();
+    $format_handler = new out_format($this->config());
+    
+    $pre_style = 'text-align: left; padding-left: 10px;';
+    $pre_style .= 'white-space: pre-wrap;'; /* css-3 */
+    $pre_style .= 'white-space: -moz-pre-wrap;'; /* Mozilla, since 1999 */
+    $pre_style .= 'white-space: -pre-wrap;'; /* Opera 4-6 */
+    $pre_style .= 'white-space: -o-pre-wrap;'; /* Opera 7 */
+    $pre_style .= 'word-wrap: break-word;'; /* Internet Explorer 5.5+ */
+    $pre_style .= 'font: inherit;';
+    
+    foreach($this as $arg){
+    
+      $arg_str = '';
+      if($this->config()->outInfo()){
+        $arg_str = $arg->outInfo($this->file()->className());
+      }else if($this->config()->outChar()){
+        $arg_str = $arg->outChar();
+      }else{
+        $arg_str = $arg->out();
+      }//if/else
+    
+      $ret_str[] = $format_handler->wrap('pre',sprintf("%s %s",$arg_str,$this->file()->out(true,false)),$pre_style);
+    
+    }//foreach
+  
+    $ret_str[] = '';
+    return join("\r\n",$ret_str);
+
+  }//method
+
+  /**
+   *  required method to implement IteratorAggregate
+   *   @return  ArrayIterator   
+   */
+  function getIterator(){
+    return new ArrayIterator($this->get());
+  }//method
+
+  /**
+   *  combine the passed in names with their corresponding values
+   *  
+   *  @param  string  $method the method that was originally called
+   *  @param  array $arg_val_list the argument values that where pased to $method         
+   *  @return array a list of out_arg instances
+   */        
+  private function parse($method,$arg_val_list = array()){
+  
+    // canary...
+    if(empty($method)){ return array(); }//if
+  
+    $ret_list = array();
+    $this->method($method);
+    list($class_name,$func_name) = explode('::',$method);
+    
+    $backtrace = null;
+    $backtrace_list = array_reverse(debug_backtrace()); // we want to go latest to first
+    $last_backtrace = 0; ///(count($backtrace_list) - 1);
+    $trace_list = array();
+    
+    //possible 'included' functions
+    $include_list = array('include','include_once','require','require_once');
+    
+    //check for any included/required files. if found, get array of the last included file (they contain the right line numbers)
+    ///for($i=$last_backtrace; $i>=0; $i--){
+    for($i = 0; $i < count($backtrace_list); $i++){
+      
+      $trace_list[] = new out_file(
+        empty($backtrace_list[$i]['file']) ? 'unknown' : $backtrace_list[$i]['file'],
+        empty($backtrace_list[$i]['line']) ? 'unknown' : $backtrace_list[$i]['line'],
+        empty($backtrace_list[$i]['class']) ? 'unknown' : $backtrace_list[$i]['class'],
+        empty($backtrace_list[$i]['function']) ? 'unknown' : $backtrace_list[$i]['function']
+      );
+      
+      // canary...
+      if(isset($backtrace_list[$i]['function']) 
+        && (in_array($backtrace_list[$i]['function'], $include_list) || (strcasecmp($backtrace_list[$i]['function'], $func_name) != 0))
+      ){ continue; }//if
+
+      $backtrace = $backtrace_list[$i];
+      $last_backtrace = ($i - 1);
+      
+      break;
+
+    }//for
+    
+    $this->trace($trace_list);
+    
+    if(!empty($backtrace)){
+
+      $line = ($backtrace['line']-1);
+      $code = '';
+      
+      if(is_file($backtrace['file'])){
+        
+        $file_lines = file($backtrace['file']);
+        if(!empty($file_lines)){
+          // get the code with the function call, multiline strings need to be rebuilt...
+          $code = $file_lines[$line--];
+          while(!preg_match('/'.$class_name.'::'.$func_name.'/iu',$code) && ($line >= 0)){
+            $code = $file_lines[$line--].$code;
+          }//while
+        }//if
+      }//if
+      
+      // store the file and line number...
+      $file_map = new out_file(
+        $backtrace['file'],
+        $backtrace['line'],
+        isset($backtrace[$last_backtrace]['class']) ? $backtrace[$last_backtrace]['class'] : ''
+      );
+      $this->file($file_map);
+      
+      if(!empty($arg_val_list)){
+
+        //find call to this class, parse out the func vars...
+        $matches = array();
+        if(!empty($code) && preg_match_all('/'.$class_name.'::'.$func_name.'\s*\((.*?)\);/ius', $code, $matches)){
+        
+          foreach($matches[1] as $key => $match){
+          
+            if(empty($match)){
+            
+              // the function call didn't have any vars, so just add it to the list...
+              $ret_list[] = new out_arg('',$arg_val_list[0]);
+              
+            }else{
+            
+              // split the func args by the comma and add them to the list...
+              $func_args = $this->parseVarNames($match);
+              foreach($func_args as $key => $func_arg){
+              
+                $ret_list[] = new out_arg(trim($func_arg),$arg_val_list[$key]);
+              
+              }//foreach
+              
+            }//if/else
+        
+          }//foreach
+          
+        }else{
+          
+          if(isset($backtrace['args'])){
+            
+            foreach($backtrace['args'] as $key => $arg){
+            
+              $ret_list[] = new out_arg('',$arg_val_list[$key]);
+            
+            }//foreach
+          
+          }else{
+          
+            $ret_list[] = new out_arg('',$arg_val_list[0]);
+            
+          }//if/else
+        
+        }//if/else
+        
+      }//if
+        
+    }//if
+    
+    return $ret_list;
+  
+  }//method
+  
+  /**
+   *  parse the varnames from the found string between the calling method's parens
+   * 
+   *  since a method can be called with multiple var names and types (eg, e($one,'a string',trim($four)))
+   *  they have to be parsed into their individual names so they can be accurately identified
+   * 
+   *  @internal this used to be accomplished with the regex '/,(?=\s*(?:\$[a-zA-Z_]|[\'\"]))/u' but it
+   *    would get confused with nested functions and I couldn't see any way to fix the regex so I have
+   *    resorted to a good ole' fashioned parser
+   *
+   *  @param string $input the string from {@link getVarInfo()} parsed from the method call
+   *  @return array list of all the variable names found
+   */
+  private function parseVarNames($input){
+  
+    $ret_list = array();
+    for($i = 0, $max = mb_strlen($input); $i < $max ;$i++){ 
+      $name = '';
+      switch($input[$i]){
+        case '$': // we have a variable or class...
+          // go until a comma is hit
+          while(($i < $max) && ($input[$i] != ',')){
+            $name .= $input[$i];
+            if(($input[$i] == '"') || ($input[$i] == "'")){
+              list($str,$i) = $this->resolveStr($i+1,$input[$i],$input,$max);
+              $name .= $str;
+              $i++;
+            }else if($input[$i] == '('){
+              list($str,$i) = $this->resolveParen(++$i,$input,$max);
+              $name .= $str;
+            }else{
+              $i++;
+            }//if/else if/else
+          }//while
+          $ret_list[] = $name;
+          break;
+          
+        case '"': // we have a string...
+        case "'":
+          $name .= $input[$i]; $trigger = $input[$i];
+          list($str,$i) = $this->resolveStr($i+1,$input[$i],$input,$max);
+          $name .= $str;
+          $ret_list[] = $name;
+          break;
+        
+        case ',': // just skip right past commas
+          break;
+        
+        default: // either a space, or the beginning of a function
+          if(!ctype_space($input[$i])){ // it's a function
+            // multiple functions and stuff can be strung together, so if a ( is
+            // found then go ahead and go until a ) is found for each ( found...
+            while(($i < $max) && ($input[$i] != ',')){
+              $name .= $input[$i];
+              if(($input[$i] == '"') || ($input[$i] == '\'')){
+                list($str,$i) = $this->resolveStr($i+1,$input[$i],$input,$max);
+                $name .= $str;
+              }else if($input[$i] == '('){
+                list($str,$i) = $this->resolveParen($i+1,$input,$max);
+                $name .= $str;
+              }else{
+                $i++;
+              }//if/else if/else
+            }//while
+            ///$i++;
+            $ret_list[] = $name;
+          }//if
+          break;
+      }//switch
+    }//for
+  
+    return $ret_list;
+  
+  }//method
+  
+  /**
+   *  this is a helper function for parseVarNames. It gets from one paren to the next
+   *     
+   *  @param  integer $i  where in $input we are
+   *  @param  string  $input  the input being scanned
+   *  @param  integer @max  the size of input               
+   *  @return array array($name,$i) $name is the part of input between the parens, 
+   *                $i is where the last paren was found
+   */        
+  private function resolveParen($i,$input,$max){
+    $name = '';
+    $paren_count = 1; // we have to count the first paren that got us into this function
+    while($i < $max){
+      $name .= $input[$i];
+      if($input[$i] == '('){
+        $paren_count++;
+      }else if($input[$i] == ')'){
+        $paren_count--;
+        if($paren_count <= 0){ break; }//if
+      }else if(($input[$i] == '"') || ($input[$i] == "'")){
+        $trigger = $input[$i];
+        list($str,$i) = $this->resolveStr($i+1,$trigger,$input,$max);
+        $name .= $str;
+      }//if/else if...
+      $i++;
+    }//while
+    return array($name,$i+1);
+  }//method
+  
+  /**
+   *  this is a helper function for parseVarNames. It gets a full string of either ' or "
+   *  @param  integer $i  where in $input we are
+   *  @param  string  $trigger  either ' or " depending on which was found   
+   *  @param  string  $input  the input being scanned
+   *  @param  integer @max  the size of input
+   *  @return array array($name,$i) $name is the found string between quotes, 
+   *                $i is where the last paren was found
+   */
+  private function resolveStr($i,$trigger,$input,$max){
+    $name = '';
+    // to avoid something like: trim(' blah (       '') just record until the trigger is found...
+    while(
+      ($i < $max) 
+      && (
+        ($input[$i] != $trigger) 
+        || (!empty($input[$i-1]) && ($input[$i-1] == '\\')) /* make sure it's not an escaped quote */
+        || (!empty($input[$i+1]) && ($input[$i+1] == '.')) /* make sure it's not a concotenated string */
+        || (!empty($input[$i-1]) && ($input[$i-1] == '.')) /* make sure it's not coming off a concotenation */
+      )
+    ){
+      $name .= $input[$i++];
+    }//while
+    // save the trigger if we didn't max out...
+    if(!empty($input[$i])){ $name .= $input[$i]; }//if
+    return array($name,$i);
+  }//method
+
+}//class
+
+class out_arg extends out_config_base {
+
+  /**#@+
+   *  all the different types the arg can be
+   *  @var  integer
+   */
+  const TYPE_UNDEFINED = 0;
+  const TYPE_NULL = 1;
+  /**
+   *  for normal $vars with a string value 
+   */
+  const TYPE_STRING_VAL = 2;
+  /**
+   *  for passed in vars that are strings, (eg, "this was the value passed in")
+   */     
+  const TYPE_STRING_LITERAL = 3;
+  /**
+   *  certain times strings will be created and added as an arg to be printed out, this
+   *  type is so those string don't go through the normal escaping process since they are
+   *  generated on the fly with stuff like HTML, etc.      
+   */     
+  const TYPE_STRING_GENERATED = 4;
+  const TYPE_NUMERIC = 5;
+  const TYPE_ARRAY = 6;
+  const TYPE_OBJECT = 7;
+  const TYPE_BOOLEAN = 8;
+  /**
+   *  used to output breaks, see {@link outBreak()} and {@link out::b()}
+   */     
+  const TYPE_BREAK = 9;
+  /**#@-*/
+  
+  /**
+   *  used for indent in functions like {@link aIter()} and {@link outInfo()}
+   *  @var  string   
+   */     
+  private $indent = "\t";
+
+  function __construct($name = '',$val = null){
+  
+    $this->name($name);
+    $this->value($val);
+  
+  }//method
+
+  function type($val = null){ return $this->val('type',$val,self::TYPE_UNDEFINED); }//method
+  
+  function name($val = null){ return $this->val('name',$val,''); }//method
+  function hasName(){ return $this->has('name'); }//method
+  
+  ///function printName($val = null){ return $this->val('print_name',$val,true); }//method
+  
+  function useName($val = null){ return $this->val('use_name',$val,true); }//method
+  
+  function defaultValue($val = null){ return $this->val('value_default',$val,''); }//method
+  
+  function printValue($val = null){ return $this->val('out_arg::value_print',$val,$this->value()); }//method
+  function hasPrintValue(){ return $this->has('out_arg::value_print'); }//method
+  
+  /**
+   *  get/set the value of the arg
+   *  
+   *  $val could be NULL which messes everything up
+   *      
+   *  this is different than most of the get/set functions that just wrap {@link out_base::val()} because
+   *  it has to compensate for being able to have null values for the value, which causes isset() to fail
+   *  
+   *  @param  mixed $val  if $val is passed in then set value to $val
+   *  @return mixed the currently set value
+   */
+  function value(){
+    // have to compensate for $val actually being passed in with a value of NULL...
+    $val = func_get_args();
+    if(empty($val)){
+      return array_key_exists('out_arg::value',$this->val_map)
+        ? $this->val_map['out_arg::value']
+        : '';
+    }else{
+      $this->val_map['out_arg::value'] = $val[0];
+      $this->setType();
+    }//if/else
+  }//method
+  
+  /**
+   *  auto discover the type, this is called when the arg is going to be output but 
+   *  the type can also be explicitely set by using {@link type()}
+   *  
+   *  @return integer one of the TYPE_* constants
+   */        
+  private function setType(){
+  
+    $ret_int = $this->type();
+    $default_val = '';
+    if(empty($ret_int)){
+    
+      $val = $this->value();
+      
+      if(is_null($val)){
+      
+        $ret_int = self::TYPE_NULL;
+        $default_val = 'NULL';
+        $this->printValue($default_val);
+        
+      }else if(is_bool($val)){
+        
+        $ret_int = self::TYPE_BOOLEAN;
+        $default_val = $val ? 'TRUE' : 'FALSE';
+        $this->printValue($default_val);
+        
+      }else if(is_numeric($val)){
+      
+        $ret_int = self::TYPE_NUMERIC;
+        $default_val = $val;
+        
+      }else if(is_object($val)){
+      
+        $ret_int = self::TYPE_OBJECT;
+        $default_val = get_class($val).' instance';
+        
+      }else if(is_array($val)){
+      
+        $ret_int = self::TYPE_ARRAY;
+        $default_val = 'array()';
+        
+      }else if(is_string($val)){
+        
+        $ret_int = self::TYPE_STRING_VAL;
+        
+        $name = $this->name();
+        
+        $regex = '#^[\'"]{2}(?:\.(\d+))?$#u'; // technically it isn't possible to do ''.5 which is a shame
+        $match = array();
+        if(preg_match($regex,$name,$match)){
+        
+          $ret_int = self::TYPE_BREAK;
+          $this->name(isset($match[1]) ? $match[1] : '');
+          $this->useName(false);
+        
+        }else if(preg_match('#^[\'"]|[\'"](?!.*[\'"])(?!\s*(?:\]|\)))#u',trim($name))){
+        
+          $ret_int = self::TYPE_STRING_LITERAL;
+          $this->useName(false);
+          
+        }//if/else if
+        
+        ///$format_handler = new out_format($this->config());
+        ///$default_val = $format_handler->enquote(empty($val) ? '' : $val);
+        $default_val = empty($val) ? '""' : sprintf('"%s"',$val);
+        
+      }//if/else if
+    
+      $this->type($ret_int);
+      $this->defaultValue($default_val);
+    
+    }//if
+  
+    return $ret_int;
+  
+  }//method
+  
+  function __toString(){ return $this->out(); }//method
+  
+  function out(){
+  
+    $type = $this->type();
+    switch($type){
+    
+      case self::TYPE_NULL: 
+      
+        $this->useName(true);
+        $this->config()->outEnquote(false);
+        $ret_str = $this->outVar();
+        break;
+        
+      case self::TYPE_STRING_VAL: 
+      
+        $this->useName(true);
+        $this->config()->outEnquote(true);
+        $ret_str = $this->outVar();
+        break;
+        
+      case self::TYPE_STRING_LITERAL:
+        
+        $this->useName(false);
+        $this->config()->outEnquote(true);
+        $ret_str = $this->outVar();
+        break;
+        
+      case self::TYPE_STRING_GENERATED:
+        
+        $this->useName(false);
+        $this->config()->outEnquote(false);
+        $this->config()->outEscape(false);
+        $ret_str = $this->outVar();
+        break;
+        
+      ///case self::TYPE_STRING_EMPTY: break;
+      case self::TYPE_NUMERIC:
+      
+        $this->useName(true);
+        $this->config()->outEnquote(false);
+        $ret_str = $this->outVar();
+        break;
+      
+      case self::TYPE_ARRAY:
+      case self::TYPE_OBJECT:
+      
+        $this->useName(true);
+        $this->config()->outEnquote(false);
+        $ret_str = $this->outArray();
+        break;
+      
+      case self::TYPE_BOOLEAN:
+      
+        $this->useName(true);
+        $this->config()->outEnquote(false);
+        $ret_str = $this->outVar();
+        break;
+      
+      case self::TYPE_BREAK:
+    
+        $this->useName(false);
+        $this->config()->outEnquote(false);
+        $ret_str = $this->outBreak();
+        break;
+    
+      case self::TYPE_UNDEFINED:
+      default:
+        break;
+    
+    }//switch
+    
+    return $ret_str;
+  
+  }//method
+  
+  /**
+   *  prints out information about the $this arg
+   *
+   *  @since  9-23-09
+   *  
+   *  object info uses the reflection class http://nz.php.net/manual-lookup.php?pattern=oop5.reflection&lang=en  
+   *  
+   *  @todo
+   *    - get the parent classes methods and values and stuff, then organize the methods by visible and invisible (private, protected)
+   *    - this might be a good way for aIter to display classes also, but just get the properties of the object
+   *
+   *  @param  string  $calling_class  the class name of the class that made the call
+   *  @return string  information about the arg                        
+   */
+  function outInfo($calling_class = ''){
+  
+    $this->useName(false);
+    $config = $this->config();
+    $config->outEnquote(false);
+    $config->outObject(false);
+  
+    $type = $this->type();
+    $format_handler = new out_format($config);
+    $name = $this->name();
+    $val = $this->value();
+    $info_list = array();
+    $info_type = 'undefined';
+  
+    switch($type){
+    
+      case self::TYPE_NULL: 
+      
+        $info_type = 'NULL';
+        break;
+      
+      case self::TYPE_STRING_VAL:         
+      case self::TYPE_STRING_LITERAL:
+      case self::TYPE_STRING_GENERATED:
+        
+        $info_type = 'string';
+        $info_list[] = sprintf('value: %s',$format_handler->enquote($val));
+        $info_list[] = sprintf('%d characters',mb_strlen($val));
+        break;
+        
+      ///case self::TYPE_STRING_EMPTY: break;
+      case self::TYPE_NUMERIC:
+      
+        if(is_int($val)){
+          $info_type = 'integer';
+        }else if(is_float($val)){
+          $info_type = 'float';
+        }//if/else if
+        
+        $info_list[] = sprintf('value: %s',$val);
+        
+        break;
+      
+      case self::TYPE_ARRAY:
+      
+        $info_type = 'array';
+        
+        // find out if it is an indexed array...
+        $info_list = array(
+          'length: '.count($val),
+          ctype_digit(join('',array_keys($val))) ? 'keys are numeric' : 'keys are associative'
+        );
+      
+        break;
+      
+      case self::TYPE_OBJECT:
+      
+        $rclass = new ReflectionObject($val);
+      
+        $info_type = $rclass->getName().' instance';
+        $indent = $this->indent;
+        
+        if($path = $rclass->getFileName()){
+          $file_map = new out_file($path);
+          $file_map->config($config);
+          $info_list[] = sprintf(
+            '%s %s %s',
+            $format_handler->wrap('b','class:'),
+            $rclass->getName(),
+            $file_map->out(true,false)
+          );
+        }//if
+        
+        $class_name_list = array($rclass->getName());
+        
+        // get all the classes this object extends...
+        if($parent_class = $rclass->getParentClass()){
+          
+          $info_list[] = $format_handler->wrap('b','Extends:');
+          
+          while(!empty($parent_class)){
+          
+            $class_name_list[] = $parent_class->getName();
+            $file_map = new out_file($parent_class->getFileName());
+            $file_map->config($config);
+            $info_list[] = sprintf(
+              '%s%s %s',
+              $indent,
+              $parent_class->getName(),
+              $file_map->out(true,false)
+            );
+            
+            $parent_class = $parent_class->getParentClass();
+            
+          }//while
+            
+        }//if
+        
+        // handle properties...
+        $properties = $rclass->getProperties();
+        $info_list[] = $format_handler->wrap('b',sprintf('%s (%d):','Properties',count($properties)));
+        foreach($properties as $property){
+        
+          $property->setAccessible(true);
+          $prop_val = $property->getValue($val);
+          if(is_array($prop_val)){
+            $prop_val = $format_handler->escapeArray(trim($this->aIter($prop_val,2,false)));
+          }else{
+            $arg_map = new out_arg('',$prop_val);
+            $prop_val = $arg_map->defaultValue();
+          }//if/else
+          
+          $info_list[] = sprintf('%s%s %s = %s',
+            $indent,
+            $format_handler->wrap('span',join(' ',Reflection::getModifierNames($property->getModifiers())),out_config::COLOR_MODIFIER),
+            $format_handler->wrap('span',$property->getName(),out_config::COLOR_PARAM),
+            $prop_val
+          );
+          
+        }//foreach
+        
+        // handle methods...
+        $methods = $rclass->getMethods();
+        $info_list[] = $format_handler->wrap('b',sprintf('%s (%d):','Methods',count($methods)));
+        $method_list = array();
+        $only_public_methods = empty($calling_class)
+          ? true 
+          : !in_array($calling_class,$class_name_list);
+        
+        foreach($methods as $method){
+          
+          // we only want to show methods the person can use...
+          if($only_public_methods && !$method->isPublic()){ continue; }//if
+          
+          $params = $method->getParameters();
+          $param_list = array();
+          foreach($params as $param){
+            
+            $param_str = $format_handler->wrap('span',sprintf('$%s',$param->getName()),out_config::COLOR_PARAM);
+            if($param->isDefaultValueAvailable()){
+              $arg_map = new out_arg('',$param->getDefaultValue());
+              $param_str .= ' = '.$arg_map->defaultValue();
+            }//if
+            $param_list[] = $param_str;
+            
+          }//foreach
+        
+          // see if we can get a return type for the method...
+          $method_return_type = '';
+          $method_comment = $method->getDocComment();
+          if(!empty($method_comment)){
+            $match = array();
+            if(preg_match('#\*\s*@return\s+(\S+)#iu',$method_comment,$match)){
+              $method_return_type = ' '.$format_handler->wrap('span',$match[1],out_config::COLOR_TYPE);
+            }//if  
+          }//if
+        
+          $method_list[$method->getName()] = sprintf('%s%s%s %s(%s)',
+            $indent,
+            $format_handler->wrap('span',join(' ',Reflection::getModifierNames($method->getModifiers())),out_config::COLOR_MODIFIER),
+            $method_return_type,
+            $method->getName(),
+            join(', ',$param_list)
+          );
+        
+        }//foreach
+        ksort($method_list);
+        $info_list = array_merge($info_list,array_values($method_list));
+        
+        // handle constants...
+        $constants = $rclass->getConstants();
+        $info_list[] = $format_handler->wrap('b',sprintf('%s (%d):','Constants',count($constants)));
+        foreach($constants as $const_name => $const_val){
+          $info_list[] = sprintf('%s%s = %s',$indent,$format_handler->wrap('span',$const_name,out_config::COLOR_PARAM),$const_val);
+        }//foreach
+        
+        break;
+      
+      case self::TYPE_BOOLEAN:
+      
+        $info_type = 'boolean';
+        $info_list[] = sprintf('value: %s',$this->defaultValue());
+        
+        break;
+      
+      case self::TYPE_BREAK:
+    
+        $info_type = 'break';
+        $info_list[] = sprintf('lines: %d',$this->name());
+        break;
+    
+      case self::TYPE_UNDEFINED:
+      default:
+      
+        $type = 'undefined';
+      
+        break;
+    
+    }//switch
+    
+    $this->printValue(sprintf("%s (%s)\r\n%s",
+      $format_handler->wrap('b',$name),
+      $info_type,
+      empty($info_list) ? '' : join("\r\n",$info_list)."\r\n"
+    ));
+    
+    return $this->outAll();
+    
+  }//method
+  
+  /**
+   *  print out the chars using linux's od utility
+   *  
+   *  @since  2-26-09
+   */
+  static function outChar(){
+  
+    // canary...
+    // http://stackoverflow.com/questions/623776/does-php-have-a-function-to-detect-the-os-its-running-on
+    if(mb_stripos(php_uname('s'),'windows') !== false){ return sprintf('%s does not support Octal Dump',php_uname('s')); }//if
+  
+    $ret_str = '';
+  
+    $this->useName(true);
+    $config = $this->config();
+    $config->outEnquote(false);
+    $config->outObject(false);
+    
+    $val = $this->value();
+    if(is_string($val)){
+    
+      $command = 'echo '.escapeshellarg($var).' | od -c';
+      $output = array();
+      exec($command,$output);
+      $this->printValue(implode("\r\n",$output)."\r\n");
+      
+      $ret_str = $this->outAll();
+      
+    }//if
+    
+    return $ret_str;
+  
+  }//method
+  
+  /**
+   *  produces a divider line in input, the line is a bunch of equal signs.  
+   *
+   *  called publicly from out::b, or out::e(''), this creates a separator with a title, it is
+   *  mainly handy for breaking up large blocks of output.
+   *
+   *  @internal this has not so much a bug, but a niggle, if you have a title that has
+   *            a lot of thin chars and not a lot of wide ones (eg, w,m) and you have
+   *            specified more than 1 $lines, then the title line might be shorter because
+   *            even if it has the same amount of chars, they aren't as wide as =         
+   *      
+   *  @param  string  title the title you want to the separator to have
+   *  @param  array $info_map the info_map created from {@link getVarInfo()}
+   *  @param  integer $out_type the output type
+   *  @param  integer $lines  how many lines the break should have            
+   *  @return string  the created break block to be printed out
+   */
+  private function outBreak(){
+  
+    $ret_str = '';
+    
+    $lines = (int)$this->name();
+    if(empty($lines)) { $lines = 1; }//if
+    $half_lines = intval(floor($lines / 2));
+    
+    $title = $this->value();
+    $title_len = 0;
+    if(!empty($title)){
+      $title = ' '.$title.' ';
+      $title_len = mb_strlen($title);
+    }//if
+    
+    $line_char = '=';
+    $line_len = 60;
+    $line_len = ($title_len > $line_len) ? $title_len : $line_len;
+    $is_even = (($lines >= 2) && (($lines % 2) === 0)) ? true : false; 
+    for($i = 0; $i < $half_lines ;$i++){ $ret_str .= str_pad('',$line_len,$line_char)."\r\n"; }//for
+    $ret_str .= str_pad($title,$line_len,$line_char,STR_PAD_BOTH)."\r\n";
+    $half_lines = ($is_even) ? ($half_lines - 1) : $half_lines;
+    for($i = 0; $i < $half_lines ;$i++){ $ret_str .= str_pad('',$line_len,$line_char)."\r\n"; }//for
+    
+    $this->printValue($ret_str);
+    
+    return $this->outVar();
+  
+  }//method
+  
+  /**
+   *  prints out the array or object
+   *  
+   *` @since  9-11-08 this function respects an object's __toString method      
+   *
+   *  @param  array|object  $array  to be printed out
+   *  @param  array $info_map from {@link getVarInfo()}
+   *  @param  integer $out_type   
+   *  @return the array contents in nicely formatted string form
+   */
+  private function outArray(){
+    
+    $format_handler = new out_format($this->config());
+    
+    if($this->useName()){
+      if(!$this->hasName()){
+        $this->name('Array');
+      }//if
+    }//if
+    
+    $array = $this->value();
+    
+    $value = is_object($array) 
+      ? $this->outObject($array,$this->config()->outObject()) 
+      : $this->aIter($array,0,$this->config()->outObject());
+    $value = $format_handler->escapeArray($value);
+    $this->printValue($value);
+    
+    return $this->outAll();
+    
+  }//method
+  private function aIter($array,$deep = 0,$out_object = false){
+  
+    $ret_str = 'Array ('.count($array).")\r\n(\r\n";
+    $format_handler = new out_format($this->config());
+  
+    foreach($array as $key => $val){
+      $ret_str .= "\t[".$key.'] => ';
+      if(is_object($val)){
+        $ret_str .= trim($format_handler->indent($this->indent,$this->outObject($val,$out_object)));
+      }else if(is_array($val)){
+        $ret_str .= trim($format_handler->indent($this->indent,$this->aIter($val,$deep + 1,$out_object)));
+      }else{
+      
+        $ret_arg = new self('',$val);
+        $ret_str .= $ret_arg->defaultValue();
+    
+      }//if/else
+      $ret_str .= "\r\n";
+    }//method
+  
+    $prefix = str_repeat($this->indent,($deep > 1) ? ($deep - 1) : $deep);
+  
+    return trim($format_handler->indent($prefix,$ret_str.')'))."\r\n";
+  
+  }//method
+  
+  /**
+   *  output an object
+   *  
+   *  @param  object  $obj  the object to output, this is different than outArray() and outVar() because
+   *                        it can be called from {@link aIter()} 
+   *  @param  boolean $out_object true if you want the object to be printed out, false if you just want the object
+   *                              identified in output (a little cleaner)              
+   *  @return string  the printValue of an object
+   */
+  private function outObject($obj,$out_object = false){
+  
+    $ret_str = '';
+  
+    if($out_object){
+      if(method_exists($obj,'__toString')){
+        $ret_str = get_class($obj).'::__toString() - '.$obj;
+      }else{
+        $ret_str = print_r($obj,1);
+      }//if/else
+    }else{
+      $ret_str = get_class($obj).' instance';
+    }//if/else
+  
+    return $ret_str;
+  
+  }//method
+  
+  
+  private function outVar(){
+  
+    $ret_str = '';
+    $format_handler = new out_format($this->config());
+    
+    if($this->useName()){
+      if(!$this->hasName()){
+        $this->name('Variable');
+      }//if
+    }//if
+    
+    $this->printValue($format_handler->escape($this->printValue()));
+    
+    return $this->outAll();
+  
+  }//method
+  
+  private function outAll(){
+  
+    $format_handler = new out_format($this->config());
+  
+    $ret_str = '';
+    if($this->config()->outEnquote()){
+      $ret_str = $format_handler->enquote($this->printValue());
+    }else{
+      $ret_str = $this->printValue();
+    }//if/else
+  
+    if($this->useName() && $this->hasName()){
+    
+      $ret_str = sprintf("%s = %s",$format_handler->wrap('b',$this->name()),$ret_str);
+    
+    }//if
+    
+    return $ret_str;
+  
+  }//method
+  
+}//class
+
+class out_format extends out_config_base {
+
+  function __construct($config = null){
+    
+    $this->config($config);
+  
+  }//method
+
+  /**
+   *  indent all the lines of $val with $indent
+   *  
+   *  @param  string  $indent something like a tab
+   *  @param  string  $val  the string to indent
+   *  @return string  indented string
+   */
+  function indent($indent,$val){
+    return preg_replace('#^(.)#mu',$indent.'\1',$val);
+  }//method
+
+  /**
+   * decide if value should be encased in quotes (") or not
+   *
+   * @param string $val the value to quote   
+   * @return string the enquoted, or not $val
+   */
+  function enquote($val){
+  
+    // canary...
+    ///if(!$this->config()->outEnquote()){ return $val; }//if
+    
+    $start_quote = $stop_quote = $this->wrap('span','"',out_config::COLOR_ENQUOTE);
+    
+    return $this->wrap(array($start_quote,$stop_quote),$val);
+    
+  }//method
+
+  function escapeArray($input){
+  
+    // canary...
+    if(!$this->config()->isHtml()){ return $input; }//if
+  
+    $input = str_replace(array('<','>'),array('&lt;','&gt;'),$input);
+    $pinput = preg_replace('/(?<=\s)\[[^\]]+\](?=\s+=&gt;)/u','<span style="color:'.out_config::COLOR_INDEX.'">\0</span>',$input);
+    if(preg_last_error() == PREG_NO_ERROR){
+      $input = $pinput; unset($pinput);
+    }//if
+  
+    return $input;
+  
+  }//method
+
+  /**
+   *  html special char escapes the $input
+   *
+   *  @param  string  $input
+   *  @return string  $input escaped      
+   */
+  function escape($input){
+  
+    if($this->config()->isHtml() && $this->config()->outEscape()){
+      $input = htmlspecialchars($input,ENT_NOQUOTES);
+    }//if
+    
+    return $input;
+  
+  }//method
+  
+  /**
+   *  takes a full path and returns the path from the server's public web root
+   *  
+   *  @param  string  $path the original path that should be slimmed            
+   *  @return string  the slimmed down path from the web root, not the server root
+   */        
+  function path($path){
+    
+    // sanity...
+    if(empty($path)){ return ''; }//if
+    
+    $file_path = explode(DIRECTORY_SEPARATOR,$path);
+    $doc_root = isset($_SERVER['DOCUMENT_ROOT'])
+      ? $_SERVER['DOCUMENT_ROOT']
+      : (isset($_ENV['DOCUMENT_ROOT']) ? $_ENV['DOCUMENT_ROOT'] : '');
+    
+    // we use a preg with both directory separators because apache will always return /, but we wan't to be safe...
+    $root_path = empty($doc_root) ? array() : preg_split('#\\/#u',$doc_root);
+    $slimmed_path = array_diff($file_path,$root_path);
+    
+    return DIRECTORY_SEPARATOR.implode(DIRECTORY_SEPARATOR,$slimmed_path);
+    
+  }//method
+  
+  /**
+   *  wrap the given $input in the html $tag
+   *  
+   *  @param  string|array  $tag  eg, span, div, b, or an array($start,$stop) (eg, array('(',')'))
+   *  @param  string  $input  what will be wrapped by tag
+   *  @param  string  $style  either a hex color (eg, #000000) or a list of styles for the tags style="" attribute
+   *  @return string  $input wrapped in $tag with $style if output is html
+   */
+  function wrap($tag,$input,$style = ''){
+    
+    if(!empty($tag)){
+    
+      if(preg_match('/^#\d{6}$/u',$style)){ $style = 'color:'.$style.';'; }//if
+    
+      if(is_array($tag)){
+      
+        $input = sprintf('%s%s%s',$tag[0],$input,$tag[1]);
+      }else{
+      
+        // you can only wrap an html tag if output is html...
+        if($this->config()->isHtml()){
+          $input = sprintf('<%s style="%s">%s</%s>',$tag,$style,$input,$tag);
+        }//if
+        
+      }//if/else
+      
+    }//if
+    
+    return $input;
+  
+  }//method
+
+
+}//class
+
+class out_file extends out_config_base {
+
+  function __construct($path = '',$line = '',$class = '',$function = ''){
+  
+    $this->path($path);
+    $this->line($line);
+    $this->className($class);
+    $this->funcName($function);
+  
+  }//method
+
+  function line($val = null){ return $this->val('out_file::line',$val,''); }//method
+  function hasLine(){ return $this->has('out_file::line'); }//method
+  
+  function path($val = null){ return $this->val('out_file::path',$val,''); }//method
+  function hasPath(){ return $this->has('out_file::path'); }//method
+  
+  function className($val = null){ return $this->val('out_file::class',$val,''); }//method
+  function hasClassName(){ return $this->has('out_file::class'); }//method
+  function funcName($val = null){ return $this->val('out_file::function',$val,''); }//method
+  function hasFuncName(){ return $this->has('out_file::function'); }//method
+  
+  function getMethod(){
+  
+    $class = $this->hasClassName() ? $this->className() : 'unknown';
+    $func = $this->hasFuncName() ? $this->funcName() : 'unknown';
+    return sprintf('%s::%s()',$class,$func);
+    
+  }//method
+  
+  /**
+   *  return the path information that is contained in this file instance
+   *  
+   *  @param  boolean $wrap_in_parens true to wrap the information in parenthesis
+   *  @param  boolean $include_method true to include class::function() after the path and line
+   *  @return string  the file info nicely formatted
+   */
+  function out($wrap_in_parens = false,$include_method = false){
+    
+    $ret_str = '';
+    
+    $format_handler = new out_format($this->config());
+    
+    if($this->hasPath()){
+    
+      $ret_str = $format_handler->path($this->path());
+    
+      if($this->hasLine()){
+        $ret_str = sprintf('%s:%s',$ret_str,$this->line());
+      }//if
+      
+      if($include_method){
+        $ret_str = sprintf('%s %s',$ret_str,$this->getMethod());
+      }//if
+      
+      $ret_str = $format_handler->wrap(
+        'span',
+        $wrap_in_parens ? $format_handler->wrap(array('(',')'),$ret_str) : $ret_str,
+        out_config::COLOR_PATH
+      );
+      
+    }//if
+    
+    return $ret_str;
+    
+  }//method
+  function __toString(){ return $this->out(); }//method
+
+}//class
+
+class out_config extends out_base {
+
+  /**
+   *  the HTML color of a filepath
+   */     
+  const COLOR_PATH = '#000099';
+  
+  /**
+   *  the HTML color of the quotes for an enquoted value
+   */
+  const COLOR_ENQUOTE = '#000099';
+  
+  /**
+   *  the HTML color of an array index
+   */
+  const COLOR_INDEX = '#990000';
+  
+  /**
+   *  the HTML color of a property/method modifier (static, private)
+   */
+  const COLOR_MODIFIER = '#800000';
+  
+  /**
+   *  the HTML color of a parameter ($var)
+   */
+  const COLOR_PARAM = '#000080';
+  
+  /**
+   *  the HTML color of a type (eg boolean, string)
+   */
+  const COLOR_TYPE = '#800080';
+
+  /**#@+
+   *  output types
+   *  @var  integer   
+   */
+  /**
+   *  for outputting stuff in html
+   */        
+  const OUT_HTML = 1;
+  /**
+   *  for outputting stuff in plain text
+   */     
+  const OUT_TXT = 2;
+  /**#@-*/
+  
+  /**
+   *  return true if $type is html, otherwise false
+   *  
+   *  @param  integer $type the type that output should be      
+   */     
+  function isHtml(){
+    return ($this->outType() === self::OUT_HTML);
+  }//method
+
+  /**
+   *  get/set the output type, this allows plain text output for certain things but
+   *  rich text (eg, html) for other things   
+   *  
+   *  @param  integer one of the OUT_* constants
+   */
+  function outType($val = null){
+  
+    if($val !== null){
+    
+      // set the out type if it hasn't been explicitely set...
+      if($val < 1){
+        
+        // if we're on the command line we want to default to plain text...
+        if(strncasecmp(PHP_SAPI, 'cli', 3) === 0){
+          $val = self::OUT_TXT;
+        }else{
+          $val = self::OUT_HTML;
+        }//if/else
+        
+      }//if
+    
+    }//if/else
+    
+    return $this->val(__METHOD__,$val,0);
+  
+  }//method
+  
+  /**
+   *  get/set whether if arg value is an object it should be output
+   *  
+   *  @param  boolean      
+   */
+  function outObject($val = null){ return $this->val(__METHOD__,$val,false); }//method
+  
+  /**
+   *  get/set whether arg value should be quoted (ie put " on each end)
+   *  
+   *  @param  boolean      
+   */
+  function outEnquote($val = null){ return $this->val(__METHOD__,$val,false); }//method
+  
+  /**
+   *  get/set whether arg value should be escaped on output
+   *  
+   *  @param  boolean      
+   */
+  function outEscape($val = null){ return $this->val(__METHOD__,$val,true); }//method
+  
+  /**
+   *  get/set whether info should be outputted for an arg instead of value  
+   *
+   *  set to true if you want the out_arg instance to print info about the arg instead of the value
+   *  
+   *  @param  boolean      
+   */
+  function outInfo($val = null){ return $this->val(__METHOD__,$val,false); }//method
+  
+  /**
+   *  get/set whether character info (octal dump) should be outputted for an arg instead of value  
+   *
+   *  set to true if you want the out_arg instance to print info about the arg instead of the value
+   *  
+   *  @param  boolean      
+   */
+  function outChar($val = null){ return $this->val(__METHOD__,$val,false); }//method
+
+
+}//class
