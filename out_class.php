@@ -341,6 +341,11 @@ class out {
   /**
    *  handles the m* calls
    *  
+   *  if you have a list of values, then you can use this function to run the same function on
+   *  all the values (similar to array_map). If your values are objects, then you can do stuff
+   *  like: out::m($list_of_obj,'->getOne()->isvalid()'). lets, say you want to get see what
+   *  the trim output of your list of strings, then do: out::m($list_of_str,'trim');         
+   *      
    *  @todo allow the method names to be an array were the first index is the name and
    *        the second -> N is the arguments to pass into the method (eg, array('method',$arg1,$arg2,...))   
    *      
@@ -351,29 +356,53 @@ class out {
   private static function mHandle($method,$func_arg_list = array()){
     
     $call_handler = null;
-    $obj_list = $func_arg_list[0];
+    $list = $func_arg_list[0];
     $method_list = array_slice($func_arg_list,1);
     
-    if(is_array($obj_list) && !empty($method_list)){
+    if(is_array($list) && !empty($method_list)){
       
       $call_handler = self::getCall($method);
       $format_handler = new out_format($call_handler->config());
       $output = array();
       
-      foreach($obj_list as $key => $obj){
-      
-        $output[] = sprintf('%d - %s',$key,$format_handler->wrap('span',get_class($obj),out_config::COLOR_INDEX));
+      foreach($list as $key => $val){
       
         foreach($method_list as $method){
         
-          if(method_exists($obj,$method)){
+          if(is_object($val)){
           
-            $arg_handler = new out_arg(sprintf('->%s()',$method),call_user_func(array($obj,$method)));
-            $arg_handler->config($call_handler->config());
-            $output[] = $format_handler->indent("\t",$arg_handler->out());
+            $output[] = sprintf('%d - %s',$key,$format_handler->wrap('span',get_class($val),out_config::COLOR_INDEX));
+          
+            if($method[0] == '-'){
+          
+              // the method is something like: ->getThis()->get() so eval it...
+              $arg_handler = new out_arg($method,eval(sprintf('return $val%s;',$method)));
+              $arg_handler->config($call_handler->config());
+              $output[] = $format_handler->indent("\t",$arg_handler->out());
+          
+            }else{
+              
+              if(method_exists($val,$method)){
+              
+                $arg_handler = new out_arg(sprintf('->%s()',$method),call_user_func(array($val,$method)));
+                $arg_handler->config($call_handler->config());
+                $output[] = $format_handler->indent("\t",$arg_handler->out());
+                
+              }else{
+                $output[] = $format_handler->indent("\t",sprintf('->%s() undefined',$method));
+              }//if/else
+              
+            }//if/else
             
           }else{
-            $output[] = $format_handler->indent("\t",sprintf('->%s() undefined',$method));
+          
+            $output[] = sprintf('%d - %s',$key,$format_handler->wrap('span',$val,out_config::COLOR_INDEX));
+          
+            // since $val isn't an object, then use it as the value to pass to a function...
+            $arg_handler = new out_arg(sprintf('%s(%s)',$method,$val),call_user_func($method,$val));
+            $arg_handler->config($call_handler->config());
+            $output[] = $format_handler->indent("\t",$arg_handler->out());          
+          
           }//if/else
         
         }//foreach
@@ -1421,10 +1450,11 @@ class out_arg extends out_config_base {
         $info_type = 'array';
         
         // find out if it is an indexed array...
-        $info_list = array(
-          'length: '.count($val),
-          ctype_digit(join('',array_keys($val))) ? 'keys are numeric' : 'keys are associative'
-        );
+        $info_list = array();
+        $info_list[] = 'length: '.count($val);
+        if(!empty($val)){
+          $info_list[] = ctype_digit(join('',array_keys($val))) ? 'keys are numeric' : 'keys are associative';
+        }//if
       
         break;
       
@@ -1440,7 +1470,7 @@ class out_arg extends out_config_base {
           $file_map->config($config);
           $info_list[] = sprintf(
             '%s %s %s',
-            $format_handler->wrap('b','class:'),
+            $format_handler->wrap('b','Defined:'),
             $rclass->getName(),
             $file_map->out(true,false)
           );
@@ -1474,6 +1504,8 @@ class out_arg extends out_config_base {
         // handle properties...
         $properties = $rclass->getProperties();
         $info_list[] = $format_handler->wrap('b',sprintf('%s (%d):','Properties',count($properties)));
+        $prop_val = null;
+        $prop_check = true;
         foreach($properties as $property){
         
           // setAccessible only around >5.3...
@@ -1481,21 +1513,33 @@ class out_arg extends out_config_base {
           
             $property->setAccessible(true);
             $prop_val = $property->getValue($val);
-            if(is_array($prop_val)){
-              $prop_val = $format_handler->escapeArray(trim($this->aIter($prop_val,2,false)));
+            
+          }else{
+          
+            if($property->isPublic()){
+              $prop_val = $property->getValue($val);
             }else{
+              $prop_val = $format_handler->wrap('i','Not Accessible');
+              $prop_check = false;
+            }//if/else
+          
+          }//if/else
+          
+          if(is_array($prop_val)){
+            $prop_val = $format_handler->escapeArray(trim($this->aIter($prop_val,2,false)));
+          }else{
+            if($prop_check){
               $arg_map = new out_arg('',$prop_val);
               $prop_val = $arg_map->defaultValue();
-            }//if/else
-            
-            $info_list[] = sprintf('%s%s %s = %s',
-              $indent,
-              $format_handler->wrap('span',join(' ',Reflection::getModifierNames($property->getModifiers())),out_config::COLOR_MODIFIER),
-              $format_handler->wrap('span',$property->getName(),out_config::COLOR_PARAM),
-              $prop_val
-            );
-            
-          }//if
+            }//if
+          }//if/else
+          
+          $info_list[] = sprintf('%s%s %s = %s',
+            $indent,
+            $format_handler->wrap('span',join(' ',Reflection::getModifierNames($property->getModifiers())),out_config::COLOR_MODIFIER),
+            $format_handler->wrap('span',$property->getName(),out_config::COLOR_PARAM),
+            $prop_val
+          );
           
         }//foreach
         
@@ -1512,11 +1556,21 @@ class out_arg extends out_config_base {
           // we only want to show methods the person can use...
           if($only_public_methods && !$method->isPublic()){ continue; }//if
           
+          $method_comment = $method->getDocComment();
+          
           $params = $method->getParameters();
           $param_list = array();
           foreach($params as $param){
             
-            $param_str = $format_handler->wrap('span',sprintf('$%s',$param->getName()),out_config::COLOR_PARAM);
+            $param_type = '';
+            if(!empty($method_comment)){
+              $match = array();
+              if(preg_match(sprintf('#\*\s*@param\s+(\S+)\s+\$%s#iu',preg_quote($param->getName())),$method_comment,$match)){
+                $param_type = $format_handler->wrap('span',$match[1],out_config::COLOR_TYPE).' ';
+              }//if  
+            }//if
+            
+            $param_str = $format_handler->wrap('span',sprintf('%s$%s',$param_type,$param->getName()),out_config::COLOR_PARAM);
             if($param->isDefaultValueAvailable()){
               $arg_map = new out_arg('',$param->getDefaultValue());
               $param_str .= ' = '.$arg_map->defaultValue();
@@ -1527,7 +1581,6 @@ class out_arg extends out_config_base {
         
           // see if we can get a return type for the method...
           $method_return_type = '';
-          $method_comment = $method->getDocComment();
           if(!empty($method_comment)){
             $match = array();
             if(preg_match('#\*\s*@return\s+(\S+)#iu',$method_comment,$match)){
