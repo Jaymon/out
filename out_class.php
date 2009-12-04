@@ -10,10 +10,22 @@
  *    out::h(1); // prints 'here 1'
  *    out::b('title',5); // prints 5 lines of = with title in the middle, just try it and you'll understand 
  *    out::i($variable); // prints out information about the $variable
+ *    out::t(); // print stack trace from wherever you are
+ *    out::c($variable); // print out the characters of the varialbe using octal dump
+ *    out::m($array,'time'); // print time($array[$index]) on each of the values in $array   
  *    
  *    use any of the f* functions (eg, fe()) to do the same thing as their countarparts (eg, fe() is identical
  *    to e()) but put the output into a file instead of to the screen
- *    
+ *  
+ *  IDEAS:
+ *    1 - out::t() could parse the file and get the 3-5 before and after lines for each call to see the function
+ *        call in context, might be cool (symfony does something similar)
+ *    2 - when going through an array, I think an object should do something like:
+ *        1 - if it has a __tostring, use that and print it out.
+ *        2 - if no tostring, try reflection like out::i() and just get the properties, don't print out objects though,
+ *            just do CLASSNAME instance, or recurse maybe 3 deep or something
+ *        3 - just print CLASSNAME instance if 1 and 2 fail       
+ *  
  *  KNOWN BUGS:
  *    1 - 2 function calls on the same line (eg, out::e($one); out::e($two)) the second
  *         function will get $one as its var name. This could probably be solved by having a static map that
@@ -22,10 +34,7 @@
  *         array., so if you hade something like: out::e($one); out::e($two); then when you got to out::e($two); the 
  *         count_map would already have 1 for out::e($one); so you could split on the semi-colon and then just look
  *         at index 1 of the split array, then increment the count for the file:line in count_map 
- *    2 - index highlighting on arrays doesn't work if there are a ton of indexes to be highlighted)
- *    3 - out::e('this is a '    .    ' concatenated string'); will fail because whitespace isn't checked when
- *        deciding if a string is concatenated
- *    4 - out::e('Current time: '.time::format('l j M Y, g:ia',time::stamp($gmt_offset))); fails   
+ *    2 - index highlighting on arrays doesn't work if there are a ton of indexes to be highlighted)   
  */         
 class out {
   
@@ -37,7 +46,7 @@ class out {
   /**
    *  used internally to tell {@link put()} to output to the $OUT_TO specified file
    */
-  const OUT_FILE = 1;        
+  const OUT_FILE = 1;
   
   /**
    *  hold the default out type
@@ -66,7 +75,14 @@ class out {
    *     
    *  @var  array
    */
-  private static $PROFILE_MAP = array();
+  private static $PROFILE_STACK = array();
+  
+  /**
+   *  switched to false in {@link put()} when a f*() out is performed
+   *     
+   *  @var  boolean
+   */
+  private static $first_file_call = true;
 
   /** php 5.3. feature...
   static function __callstatic($func,$args){
@@ -135,6 +151,16 @@ class out {
   static function e(){
     $func_arg_list = func_get_args();
     self::put(self::eHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
+  }//method
+  
+  /**
+   *  do the same as {@link e()} but then exit 
+   *
+   */        
+  static function xe(){
+    $func_arg_list = func_get_args();
+    self::put(self::eHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
+    exit();
   }//method
   
   /**
@@ -226,6 +252,15 @@ class out {
   }//method
   
   /**
+   *  same as {@link i()} but exits after
+   */
+  static function xi(){
+    $func_arg_list = func_get_args();
+    self::put(self::iHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
+    exit();
+  }//method
+  
+  /**
    *  handles the i* calls
    *  
    *  @param  string  $method the externally called method
@@ -300,6 +335,14 @@ class out {
   }//method
   
   /**
+   *  same as {@link t()} but exits after
+   */
+  static function xt(){
+    self::put(self::tHandle(__METHOD__),self::OUT_SCREEN);
+    exit();
+  }//method
+  
+  /**
    *  handles the t* calls
    *  
    *  @param  string  $method the externally called method
@@ -336,6 +379,15 @@ class out {
   static function m(){
     $func_arg_list = func_get_args();
     self::put(self::mHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
+  }//method
+  
+  /**
+   *  same as {@link m()} but exits after
+   */     
+  static function xm(){
+    $func_arg_list = func_get_args();
+    self::put(self::mHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
+    exit();
   }//method
   
   /**
@@ -425,8 +477,8 @@ class out {
   /**
    *  similar to {@link p()} but outputs to a file instead
    */
-  static function fp($title = ''){
-    self::put(self::pHandle(__METHOD__,$title),self::OUT_FILE);
+  static function fp($title = null){
+    self::put(self::pHandle(__METHOD__,$title,false),self::OUT_FILE);
   }//method
 
   /**
@@ -437,8 +489,16 @@ class out {
    *  
    *  @since  11-08-09
    */ 
-  static function p($title = ''){
+  static function p($title = null){
     self::put(self::pHandle(__METHOD__,$title),self::OUT_SCREEN);
+  }//method
+  
+  /**
+   *  similar to {@link p()} but exits after
+   */
+  static function xp($title = null){
+    self::put(self::pHandle(__METHOD__,$title),self::OUT_SCREEN);
+    exit();
   }//method
   
   /**
@@ -446,56 +506,66 @@ class out {
    *  
    *  @param  string  $method the externally called method
    *  @param  string  $title  the title of the profile
+   *  @param  boolean $is_html  if true, then output is html, false then output is plaintext   
    *  @return out_call   
    */
-  private static function pHandle($method,$title){
+  private static function pHandle($method,$title,$is_html = true){
     
     $ret_call = null;
-    if(empty(self::$PROFILE_MAP)){
+    if(empty(self::$PROFILE_STACK) || ($title !== null)){
       
       $profile_map = array();
       $call_handler = self::getCall($method);
+      if(!$is_html){ $call_handler->config()->outType(out_config::OUT_TXT); }//if
+      
       $profile_map['start_path'] = sprintf('%s:%s',$call_handler->file()->path(),$call_handler->file()->line());
       $profile_map['start'] = microtime(true);
-      $profile_map['title'] = $title;
-      self::$PROFILE_MAP = $profile_map;
+      if(empty($title)){
+        $profile_map['title'] = basename($profile_map['start_path']);
+      }else{
+        $profile_map['title'] = $title;
+      }//if/else
+      self::$PROFILE_STACK[] = $profile_map;
     
     }else{
     
-      $profile_map = self::$PROFILE_MAP;
-      $stop = microtime(true);
-      $call_handler = self::getCall($method);
-      $format_handler = new out_format($call_handler->config());
+      $profile_map = array_pop(self::$PROFILE_STACK);
+      if(!empty($profile_map)){
       
-      // get the execution time in milliseconds...
-      $time = round((($stop - $profile_map['start']) * 1000),2);
+        $stop = microtime(true);
+        $call_handler = self::getCall($method);
+        if(!$is_html){ $call_handler->config()->outType(out_config::OUT_TXT); }//if
+        
+        $format_handler = new out_format($call_handler->config());
+        
+        // get the execution time in milliseconds...
+        $time = round((($stop - $profile_map['start']) * 1000),2);
+        
+        // go through and build a path...
+        $title = '';
+        foreach(self::$PROFILE_STACK as $key => $map){
+          $title .= sprintf('%s > ',$map['title']);
+        }//foreach
+        $title .= $format_handler->wrap('b',$profile_map['title']);
+        
+        $start_file = new out_file($profile_map['start_path']);
+        $start_file->config($call_handler->config());
       
-      // get the best title...
-      if(empty($title)){
-        $title = empty($profile_map['title']) ? 'Profile' : $profile_map['title'];
-      }else{
-        if(!empty($profile_map['title'])){
-          $title = sprintf('%s -> %s',$profile_map['title'],$title);
-        }//if/else
-      }//if/else
-      
-      $title = $format_handler->wrap('b',$title);
-    
-      $start_file = new out_file($profile_map['start_path']);
-      $start_file->config($call_handler->config());
-    
-      $arg_handler = new out_arg('',
-        sprintf("%s = %s ms\r\n  start: %s\r\n",
-          $title,
-          $time,
-          $start_file->out()
-        )
-      );
-      
-      $arg_handler->type(out_arg::TYPE_STRING_GENERATED);
-      $call_handler->set($arg_handler);
-      self::$PROFILE_MAP = array();
-      $ret_call = $call_handler;
+        $arg_handler = new out_arg('',
+          sprintf("%s = %s ms\r\n\tStart: %s %s\r\n\tStop: %s ",
+            $title,
+            $time,
+            $profile_map['start'],
+            $start_file->out(true),
+            $stop
+          )
+        );
+        
+        $arg_handler->type(out_arg::TYPE_STRING_GENERATED);
+        $call_handler->set($arg_handler);
+        $ret_call = $call_handler;
+        
+      }//if
     
     }//if/else
     
@@ -615,12 +685,18 @@ class out {
         // we want plain text for the file...
         $call_handler->config()->outType(out_config::OUT_TXT);
       
-        // first get the args from the call handler...
-        $arg_list = $call_handler->get();
-        // now combine the args with a generated break with the date as a title for a nice timestamp in the output file...
-        $b_call_handler = self::bHandle(__METHOD__,array(date(DATE_RFC822),3));
-        $arg_list = array_merge($b_call_handler->get(),$arg_list);
-        $call_handler->set($arg_list);
+        if(self::$first_file_call){
+        
+          // first get the args from the call handler...
+          $arg_list = $call_handler->get();
+          // now combine the args with a generated break with the date as a title for a nice timestamp in the output file...
+          $b_call_handler = self::bHandle(__METHOD__,array(date(DATE_RFC822),3));
+          $arg_list = array_merge($b_call_handler->get(),$arg_list);
+          $call_handler->set($arg_list);
+          self::$first_file_call = false; // after this, all other file calls are not the first
+          
+        }//if
+          
         file_put_contents(self::$OUT_TO,$call_handler->out(),(FILE_APPEND | LOCK_EX));
         break;
         
@@ -760,17 +836,26 @@ class out_call extends out_config_base implements IteratorAggregate {
     $format_handler = new out_format($this->config());
   
     $trace_list = $this->trace();
+    $trace_count = count($trace_list);
     
     $trace_lines = array();
     
-    $method = empty($trace_list[1]) ? 'unknown::unknown()' : $trace_list[1]->getMethod();
+    $method = empty($trace_list[($trace_count - 2)]) 
+      ? 'unknown::unknown()' 
+      : $trace_list[($trace_count - 2)]->getMethod();
+    
     $trace_lines[] = $format_handler->wrap('b',$method);
     $trace_lines[] = "\tbacktrace:";
+    
+    // get rid of the last call since it is the out call...
+    $trace_list = array_slice($trace_list,0,($trace_count - 1));
+    // reverse the list so last call is at the top...
+    $trace_list = array_reverse($trace_list,true);
     
     foreach($trace_list as $key => $file_map){
     
       $file_map->config($this->config());
-      $trace_lines[] = sprintf("\t\t%s - %s",$key,$file_map->out(false,true));
+      $trace_lines[] = sprintf("\t\t%'02d - %s\t\t%s",$key,$file_map->out(false,false),$file_map->getMethod());
     
     }//foreach
     
@@ -879,7 +964,7 @@ class out_call extends out_config_base implements IteratorAggregate {
     }//foreach
   
     $ret_str[] = '';
-    return join("\r\n",$ret_str);
+    return join("\r\n\r\n",$ret_str);
 
   }//method
 
@@ -1034,31 +1119,19 @@ class out_call extends out_config_base implements IteratorAggregate {
   private function parseVarNames($input){
   
     $ret_list = array();
-    for($i = 0, $max = mb_strlen($input); $i < $max ;$i++){ 
+    for($i = 0, $max = mb_strlen($input); $i < $max ;$i++){
       $name = '';
       switch($input[$i]){
-        case '$': // we have a variable or class...
-          // go until a comma is hit
-          while(($i < $max) && ($input[$i] != ',')){
-            $name .= $input[$i];
-            if(($input[$i] == '"') || ($input[$i] == "'")){
-              list($str,$i) = $this->resolveStr($i+1,$input[$i],$input,$max);
-              $name .= $str;
-              $i++;
-            }else if($input[$i] == '('){
-              list($str,$i) = $this->resolveParen(++$i,$input,$max);
-              $name .= $str;
-            }else{
-              $i++;
-            }//if/else if/else
-          }//while
-          $ret_list[] = $name;
-          break;
-          
+      
         case '"': // we have a string...
         case "'":
-          $name .= $input[$i]; $trigger = $input[$i];
-          list($str,$i) = $this->resolveStr($i+1,$input[$i],$input,$max);
+          list($str,$i) = $this->resolveStr($i,$input,$max);
+          $name .= $str;
+          $ret_list[] = $name;
+          break;
+        
+        case '(':
+          list($str,$i) = $this->resolveParen($i,$input,$max);
           $name .= $str;
           $ret_list[] = $name;
           break;
@@ -1066,26 +1139,17 @@ class out_call extends out_config_base implements IteratorAggregate {
         case ',': // just skip right past commas
           break;
         
+        case '$': // we have a variable or class...
         default: // either a space, or the beginning of a function
-          if(!ctype_space($input[$i])){ // it's a function
-            // multiple functions and stuff can be strung together, so if a ( is
-            // found then go ahead and go until a ) is found for each ( found...
-            while(($i < $max) && ($input[$i] != ',')){
-              $name .= $input[$i];
-              if(($input[$i] == '"') || ($input[$i] == '\'')){
-                list($str,$i) = $this->resolveStr($i+1,$input[$i],$input,$max);
-                $name .= $str;
-              }else if($input[$i] == '('){
-                list($str,$i) = $this->resolveParen($i+1,$input,$max);
-                $name .= $str;
-              }else{
-                $i++;
-              }//if/else if/else
-            }//while
-            ///$i++;
-            $ret_list[] = $name;
-          }//if
+        
+          // get passed any whitespace...
+          while(ctype_space($input[$i])){ $i++; }//while
+        
+          list($str,$i) = $this->resolveVar($i,$input,$max);
+          $name .= $str;
+          $ret_list[] = $name;
           break;
+          
       }//switch
     }//for
   
@@ -1094,59 +1158,108 @@ class out_call extends out_config_base implements IteratorAggregate {
   }//method
   
   /**
-   *  this is a helper function for parseVarNames. It gets from one paren to the next
+   *  this is a helper function for parseVarNames. It gets either a $var or static method call
    *     
    *  @param  integer $i  where in $input we are
    *  @param  string  $input  the input being scanned
-   *  @param  integer @max  the size of input               
+   *  @param  integer @max  the size of input
+   *  @return array array($name,$i) $name is the part of input found, 
+   *                $i is where the var/method ended
+   */
+  private function resolveVar($i,$input,$max){
+    $name = '';
+    // go until a comma is hit
+    while(($i < $max) && ($input[$i] != ',')){
+      $name .= $input[$i];
+      if(($input[$i] == '"') || ($input[$i] == "'")){
+        list($str,$i) = $this->resolveStr($i,$input,$max);
+        $name .= $str;
+      }else if($input[$i] == '('){
+        list($str,$i) = $this->resolveParen($i,$input,$max);
+        $name .= $str;
+      }//if/else if
+      $i++;
+    }//while
+    $ret_list[] = $name;
+    return array($name,$i);
+  }//method
+  
+  /**
+   *  this is a helper function for parseVarNames. It gets from one paren to the next
+   *     
+   *  @param  integer $i  where in $input we are, should be a ( most likely
+   *  @param  string  $input  the input being scanned
+   *  @param  integer $max  the size of input               
    *  @return array array($name,$i) $name is the part of input between the parens, 
    *                $i is where the last paren was found
    */        
   private function resolveParen($i,$input,$max){
     $name = '';
-    $paren_count = 1; // we have to count the first paren that got us into this function
+    $paren_count = 0;
     while($i < $max){
-      $name .= $input[$i];
       if($input[$i] == '('){
         $paren_count++;
+        $name .= $input[$i];
       }else if($input[$i] == ')'){
         $paren_count--;
+        $name .= $input[$i];
         if($paren_count <= 0){ break; }//if
       }else if(($input[$i] == '"') || ($input[$i] == "'")){
-        $trigger = $input[$i];
-        list($str,$i) = $this->resolveStr($i+1,$trigger,$input,$max);
+        list($str,$i) = $this->resolveStr($i,$input,$max);
         $name .= $str;
       }//if/else if...
       $i++;
     }//while
-    return array($name,$i+1);
+    return array($name,$i);
   }//method
   
   /**
    *  this is a helper function for parseVarNames. It gets a full string of either ' or "
-   *  @param  integer $i  where in $input we are
-   *  @param  string  $trigger  either ' or " depending on which was found   
+   *  @param  integer $i  where in $input we are, this should be either ' or "   
    *  @param  string  $input  the input being scanned
-   *  @param  integer @max  the size of input
+   *  @param  integer $max  the size of input
    *  @return array array($name,$i) $name is the found string between quotes, 
    *                $i is where the last paren was found
    */
-  private function resolveStr($i,$trigger,$input,$max){
-    $name = '';
-    // to avoid something like: trim(' blah (       '') just record until the trigger is found...
-    while(
-      ($i < $max) 
-      && (
-        ($input[$i] != $trigger) 
-        || (!empty($input[$i-1]) && ($input[$i-1] == '\\')) /* make sure it's not an escaped quote */
-        || (!empty($input[$i+1]) && ($input[$i+1] == '.')) /* make sure it's not a concotenated string */
-        || (!empty($input[$i-1]) && ($input[$i-1] == '.')) /* make sure it's not coming off a concotenation */
-      )
-    ){
-      $name .= $input[$i++];
+  private function resolveStr($i,$input,$max){
+    $name = $input[$i]; // save the first '
+    $trigger = $input[$i]; // the ' or the " is the trigger we'll look for to get out
+    $i++; // go past the enquote char
+    
+    while($i < $max){
+    
+      switch($input[$i]){
+        
+        case '"': // we have a string...
+        case "'":
+          $name .= $input[$i];
+          break 2; // we're done
+        
+        case '(':
+          list($str,$i) = $this->resolveParen($i,$input,$max);
+          $name .= $str;
+          break;
+        
+        default:
+        
+          // get passed any whitespace...
+          while(ctype_space($input[$i])){ $i++; }//while
+        
+          if(isset($input[$i]) && ($input[$i] !== '.')){
+          
+            list($str,$i) = $this->resolveVar($i,$input,$max);
+            $name .= $str;
+            
+          }//if
+          
+          break;
+          
+      }//switch
+      
+      $i++;
+      
     }//while
-    // save the trigger if we didn't max out...
-    if(!empty($input[$i])){ $name .= $input[$i]; }//if
+    
     return array($name,$i);
   }//method
 
