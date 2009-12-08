@@ -321,6 +321,56 @@ class out {
   /**
    *  similar to {@link t()} but outputs to a file instead
    */
+  static function fmem(){
+    $func_arg_list = func_get_args();
+    self::put(self::memHandle(__METHOD__,$func_arg_list),self::OUT_FILE);
+  }//method
+
+  /**
+   *  print out the memory used
+   *  
+   *  @since  12-07-09
+   */ 
+  static function mem(){
+    $func_arg_list = func_get_args();
+    self::put(self::memHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
+  }//method
+  
+  /**
+   *  handles the mem* calls
+   *  
+   *  @param  string  $method the externally called method
+   *  @param  array $func_arg_list  the args passed into $method
+   *  @return out_call   
+   */
+  private static function memHandle($method,$func_arg_list = array()){
+    
+    $call_handler = self::getCall($method,$func_arg_list);
+    
+    if(empty($func_arg_list)){
+    
+      $format_handler = new out_format($call_handler->config());
+      $str = $format_handler->bytes(memory_get_usage(true));
+    
+      $arg_handler = new out_arg('Total Memory',$format_handler->bytes(memory_get_usage(true)));
+      $arg_handler->type(out_arg::TYPE_VAR_GENERATED);
+      $call_handler->set($arg_handler);
+    
+    }else{
+    
+      $config = $call_handler->config();
+      $config->outMem(true);
+      $call_handler->config($config);
+    
+    }//if/else
+    
+    return $call_handler;
+    
+  }//method
+  
+  /**
+   *  similar to {@link t()} but outputs to a file instead
+   */
   static function ft(){
     self::put(self::tHandle(__METHOD__),self::OUT_FILE);
   }//method
@@ -955,6 +1005,8 @@ class out_call extends out_config_base implements IteratorAggregate {
         $arg_str = $arg->outInfo($this->file()->className());
       }else if($this->config()->outChar()){
         $arg_str = $arg->outChar();
+      }else if($this->config()->outMem()){
+        $arg_str = $arg->outMem();
       }else{
         $arg_str = $arg->out();
       }//if/else
@@ -1170,14 +1222,15 @@ class out_call extends out_config_base implements IteratorAggregate {
     $name = '';
     // go until a comma is hit
     while(($i < $max) && ($input[$i] != ',')){
-      $name .= $input[$i];
       if(($input[$i] == '"') || ($input[$i] == "'")){
         list($str,$i) = $this->resolveStr($i,$input,$max);
         $name .= $str;
       }else if($input[$i] == '('){
         list($str,$i) = $this->resolveParen($i,$input,$max);
         $name .= $str;
-      }//if/else if
+      }else{
+        $name .= $input[$i];
+      }//if/else if/else
       $i++;
     }//while
     $ret_list[] = $name;
@@ -1295,6 +1348,11 @@ class out_arg extends out_config_base {
    *  used to output breaks, see {@link outBreak()} and {@link out::b()}
    */     
   const TYPE_BREAK = 9;
+  /**
+   *  this is really similar to TYPE_STRING_GENERATED, except for vars, so the varname
+   *  can be printed out but the value doesn't go through escaping   
+   */
+  const TYPE_VAR_GENERATED = 10;
   /**#@-*/
   
   /**
@@ -1456,6 +1514,14 @@ class out_arg extends out_config_base {
       case self::TYPE_STRING_GENERATED:
         
         $this->useName(false);
+        $this->config()->outEnquote(false);
+        $this->config()->outEscape(false);
+        $ret_str = $this->outVar();
+        break;
+        
+      case self::TYPE_VAR_GENERATED:
+        
+        $this->useName(true);
         $this->config()->outEnquote(false);
         $this->config()->outEscape(false);
         $ret_str = $this->outVar();
@@ -1759,11 +1825,13 @@ class out_arg extends out_config_base {
    *  
    *  @since  2-26-09
    */
-  static function outChar(){
+  function outChar(){
   
     // canary...
     // http://stackoverflow.com/questions/623776/does-php-have-a-function-to-detect-the-os-its-running-on
     if(mb_stripos(php_uname('s'),'windows') !== false){ return sprintf('%s does not support Octal Dump',php_uname('s')); }//if
+    // aslo, you can try: http://www.php.net/manual/en/function.memory-get-usage.php#53174 ...
+    ///if (substr(PHP_OS,0,3)=='WIN') {
   
     $ret_str = '';
   
@@ -1783,6 +1851,50 @@ class out_arg extends out_config_base {
       $ret_str = $this->outAll();
       
     }//if
+    
+    return $ret_str;
+  
+  }//method
+  
+  /**
+   *  print out the char's memory
+   *  
+   *  @since  12-7-09
+   */
+  function outMem(){
+  
+    // canary...  
+    $ret_str = '';
+    
+    $val = $this->value();
+    
+    if(is_object($val)){
+    
+      $start_mem = memory_get_usage();
+      $temp_val = clone $val;
+      $stop_mem = memory_get_usage();
+    
+    }else{
+    
+      $start_mem = memory_get_usage();
+      $temp_val = $val;
+      $stop_mem = memory_get_usage();
+    
+    }//if/else
+    
+    // get rid of the temp val, we don't need it any more...
+    unset($temp_val);
+    
+    // build config...
+    $this->useName(true);
+    $config = $this->config();
+    $config->outEnquote(false);
+    $format_handler = new out_format($config);
+    
+    $total_mem = $stop_mem - $start_mem;
+    $this->printValue($format_handler->bytes($total_mem));
+    
+    $ret_str = $this->outAll();
     
     return $ret_str;
   
@@ -1905,14 +2017,14 @@ class out_arg extends out_config_base {
   
     $ret_str = '';
   
-    if($out_object){
-      if(method_exists($obj,'__toString')){
-        $ret_str = get_class($obj).'::__toString() - '.$obj;
-      }else{
-        $ret_str = print_r($obj,1);
-      }//if/else
+    if(method_exists($obj,'__toString')){
+      $ret_str = get_class($obj).'::__toString() - '.$obj;
     }else{
-      $ret_str = get_class($obj).' instance';
+      if($out_object){
+        $ret_str = print_r($obj,1);
+      }else{
+        $ret_str = get_class($obj).' instance';
+      }//if/else
     }//if/else
   
     return $ret_str;
@@ -2080,6 +2192,22 @@ class out_format extends out_config_base {
     }//if
     
     return $input;
+  
+  }//method
+  
+  /**
+   *  nicely formats integers into bytes, Kilobytes and megabytes
+   *  
+   *  @param  integer $bytes  the original bytes
+   *  @return string  the formatted byte string         
+   */
+  function bytes($bytes){
+  
+    $line_bits = array();
+    $line_bits[] = sprintf('%s bytes',number_format((float)$bytes,0,'.',','));
+    $line_bits[] = $this->wrap('span',sprintf('%.2f KB',$bytes / 1024),out_config::COLOR_MODIFIER);
+    $line_bits[] = $this->wrap('span',sprintf('%.2f MB',$bytes / 1048576),out_config::COLOR_PARAM);
+    return join("\t\t",$line_bits);
   
   }//method
 
@@ -2277,6 +2405,15 @@ class out_config extends out_base {
    *  @param  boolean      
    */
   function outChar($val = null){ return $this->val(__METHOD__,$val,false); }//method
+  
+  /**
+   *  get/set whether memory will be outputted for arg instead of value  
+   *
+   *  set to true if you want the out_arg instance to print info about the arg instead of the value
+   *  
+   *  @param  boolean
+   */
+  function outMem($val = null){ return $this->val(__METHOD__,$val,false); }//method
 
 
 }//class

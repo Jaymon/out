@@ -24,7 +24,10 @@ out::c($var); // prints out an OCTAL dump of the characters in $var, handy for s
 
 out::m($obj_list,'func_name'); // iterate through a list of objects and print out the output of $obj->func_name()
 
-out::p(); /* do something long and complex here */ out::p('how long this code took'); // prints out how long the code between the two p() calls took to run
+out::p('how long this code took'); /* do something long and complex here */ out::p(); // prints out how long the code between the two p() calls took to run, passing in a title initiates a profile, calling with nothing (eg, out::p()), finishes a profile, so you can nest multiple p calls
+
+out::mem($var); // print out memory $var takes
+out::mem(); // print out how much total memory is used
 
 now, if you want to print to a file instead, just add an f in front of all the functions and they will print to out.txt instead:
 
