@@ -352,8 +352,21 @@ class out {
       $format_handler = new out_format($call_handler->config());
       $str = $format_handler->bytes(memory_get_usage(true));
     
-      $arg_handler = new out_arg('Total Memory',$format_handler->bytes(memory_get_usage(true)));
-      $arg_handler->type(out_arg::TYPE_VAR_GENERATED);
+      $real_mem_title = $format_handler->wrap('b','Real Memory');
+      $real_mem_stats = $format_handler->bytes(memory_get_usage(true));
+    
+      $malloc_mem_title = $format_handler->wrap('b','Malloc Memory');
+      $malloc_mem_stats = $format_handler->bytes(memory_get_usage());
+    
+      $arg_val = sprintf("%s\t%s\r\n%s\t%s",
+        $real_mem_title,
+        $real_mem_stats,
+        $malloc_mem_title,
+        $malloc_mem_stats
+      );
+    
+      $arg_handler = new out_arg('',$arg_val);
+      $arg_handler->type(out_arg::TYPE_STRING_GENERATED);
       $call_handler->set($arg_handler);
     
     }else{
@@ -461,7 +474,21 @@ class out {
     $list = $func_arg_list[0];
     $method_list = array_slice($func_arg_list,1);
     
-    if(is_array($list) && !empty($method_list)){
+    $is_valid_list = false;
+    if(!empty($method_list)){
+      
+      $is_valid_list = is_array($list);
+      if(empty($is_valid_list) && is_object($list)){
+      
+        // http://www.php.net/manual/en/reflectionclass.isiterateable.php
+        $rclass = new ReflectionClass(get_class($val));
+        $is_valid_list = $rclass->isIterateable();
+      
+      }//if
+      
+    }//if
+    
+    if($is_valid_list){
       
       $call_handler = self::getCall($method);
       $format_handler = new out_format($call_handler->config());
@@ -1203,6 +1230,7 @@ class out_call extends out_config_base implements IteratorAggregate {
           break;
           
       }//switch
+      
     }//for
   
     return $ret_list;
@@ -1214,7 +1242,7 @@ class out_call extends out_config_base implements IteratorAggregate {
    *     
    *  @param  integer $i  where in $input we are
    *  @param  string  $input  the input being scanned
-   *  @param  integer @max  the size of input
+   *  @param  integer $max  the size of input
    *  @return array array($name,$i) $name is the part of input found, 
    *                $i is where the var/method ended
    */
@@ -1233,7 +1261,6 @@ class out_call extends out_config_base implements IteratorAggregate {
       }//if/else if/else
       $i++;
     }//while
-    $ret_list[] = $name;
     return array($name,$i);
   }//method
   
@@ -1260,6 +1287,8 @@ class out_call extends out_config_base implements IteratorAggregate {
       }else if(($input[$i] == '"') || ($input[$i] == "'")){
         list($str,$i) = $this->resolveStr($i,$input,$max);
         $name .= $str;
+      }else{
+        $name .= $input[$i];
       }//if/else if...
       $i++;
     }//while
@@ -1275,9 +1304,13 @@ class out_call extends out_config_base implements IteratorAggregate {
    *                $i is where the last paren was found
    */
   private function resolveStr($i,$input,$max){
-    $name = $input[$i]; // save the first '
-    $trigger = $input[$i]; // the ' or the " is the trigger we'll look for to get out
-    $i++; // go past the enquote char
+    $name = '';
+    ///$name = $input[$i]; // save the first '
+    ///$trigger = $input[$i]; // the ' or the " is the trigger we'll look for to get out
+    ///$i++; // go past the enquote char
+    $is_str = false;
+    $slash_i = -500; // needs to start smaller than -1 to clear checks in while loop
+    $trigger = '';
     
     while($i < $max){
     
@@ -1285,9 +1318,38 @@ class out_call extends out_config_base implements IteratorAggregate {
         
         case '"': // we have a string...
         case "'":
-          $name .= $input[$i];
-          break 2; // we're done
         
+          // save the trigger
+          if(!$is_str){ $trigger = $input[$i]; }//if
+        
+          $name .= $input[$i];
+          
+          // if we've found a trigger, only bounce out of the string if not escaped...
+          if($input[$i] === $trigger){
+            if(($i - 1) !== $slash_i){ $is_str = !$is_str; }//if
+          }//if
+          
+          break;
+
+        case ',':
+        
+          // we're done if we hit a comma not in a string...
+          if($is_str){ 
+          
+            $name .= $input[$i];
+            break;
+            
+          }else{
+
+            break 2;
+            
+          }//if
+
+        case '\\':
+          $name .= $input[$i];
+          $slash_i = $i;
+          break;
+
         case '(':
           list($str,$i) = $this->resolveParen($i,$input,$max);
           $name .= $str;
@@ -1295,15 +1357,25 @@ class out_call extends out_config_base implements IteratorAggregate {
         
         default:
         
-          // get passed any whitespace...
-          while(ctype_space($input[$i])){ $i++; }//while
-        
-          if(isset($input[$i]) && ($input[$i] !== '.')){
+          if($is_str){
           
-            list($str,$i) = $this->resolveVar($i,$input,$max);
-            $name .= $str;
+            $name .= $input[$i];
             
-          }//if
+          }else{
+          
+            // get passed any whitespace...
+            while(ctype_space($input[$i])){ $i++; }//while
+          
+            if(isset($input[$i]) && ($input[$i] === '.')){
+            
+              list($str,$i) = $this->resolveVar($i,$input,$max);
+              $name .= $str;
+              
+            }else{
+              break 2;
+            }//if/else
+            
+          }//if/else
           
           break;
           
@@ -1313,7 +1385,7 @@ class out_call extends out_config_base implements IteratorAggregate {
       
     }//while
     
-    return array($name,$i);
+    return array($name,--$i);
   }//method
 
 }//class
@@ -1450,7 +1522,6 @@ class out_arg extends out_config_base {
       }else if(is_string($val)){
         
         $ret_int = self::TYPE_STRING_VAL;
-        
         $name = $this->name();
         
         $regex = '#^[\'"]{2}(?:\.(\d+))?$#u'; // technically it isn't possible to do ''.5 which is a shame
@@ -1461,7 +1532,7 @@ class out_arg extends out_config_base {
           $this->name(isset($match[1]) ? $match[1] : '');
           $this->useName(false);
         
-        }else if(preg_match('#^[\'"]|[\'"](?!.*[\'"])(?!\s*(?:\]|\)))#u',trim($name))){
+        }else if($this->isStrLiteralName($name)){
         
           $ret_int = self::TYPE_STRING_LITERAL;
           $this->useName(false);
@@ -1480,6 +1551,44 @@ class out_arg extends out_config_base {
     }//if
   
     return $ret_int;
+  
+  }//method
+  
+  /**
+   *  tests whether $name is actually just a string, this is tricky because it
+   *  has to test concatenation and stuff
+   *  
+   *  @param  string  $name the argument's name
+   *  @return boolean true if an actual string and not something like a method call
+   */
+  private function isStrLiteralName($name){
+  
+    // canary...
+    if(empty($name)){ return false; }//if
+  
+    $ret_bool = false;
+    $name = trim($name);
+    
+    if(($name[0] === '"') || ($name[0] === "'")){
+      $ret_bool = true;
+    }else{
+    
+      $name_bits = explode('.',$name);
+      $bits_count = count($name_bits);
+      
+      if($bits_count > 1){
+        // check if the string is in parens, if it isn't, then it's a string literal...
+        if(!preg_match('#[\[\(]#u',$name_bits[0]) || !preg_match('#[\]\)]#u',$name_bits[$bits_count - 1])){
+          $ret_bool = true;
+        }//if
+      }//if
+      
+    }//if/else
+    
+    // this started failing...
+    ///preg_match('#^[\'"]|[\'"](?!.*[\'"])(?!\s*(?:\]|\)))#u',trim($name))
+  
+    return $ret_bool;
   
   }//method
   
