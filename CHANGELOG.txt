@@ -102,3 +102,4 @@ I also made the one letter function names and created default variable names.
 12-8-09 - when outputting objects, a __toString() is always checked and used, even if printing objects is off.
 12-11-09 - made memory print out real and malloc'd memory, also added support for out::m() being able to go through an iteratable object also
 12-15-09 - fixed some parse name issues
+3-30-10 - got rid of the x* methods but added out::x() that will exit but print to the user where the exit was called from

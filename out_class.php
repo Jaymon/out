@@ -154,16 +154,6 @@ class out {
   }//method
   
   /**
-   *  do the same as {@link e()} but then exit 
-   *
-   */        
-  static function xe(){
-    $func_arg_list = func_get_args();
-    self::put(self::eHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
-    exit();
-  }//method
-  
-  /**
    *  handles the e* calls
    *  
    *  @param  string  $method the externally called method
@@ -172,6 +162,39 @@ class out {
    */
   private static function eHandle($method,$func_arg_list){
     return self::getCall($method,$func_arg_list);
+  }//method
+  
+  /**
+   *  similar to {@link x()} but outputs to a file instead
+   */
+  static function fx($count = 0){
+    self::put(self::xHandle(__METHOD__),self::OUT_FILE);
+    exit();
+  }//method
+
+  /**
+   *  calling this method exits the program but lets the user know where it exited
+   */
+  static function x($count = 0){
+    self::put(self::xHandle(__METHOD__),self::OUT_SCREEN);
+    exit();
+  }//method
+  
+  /**
+   *  handles the x* calls
+   *  
+   *  @param  string  $method the externally called method
+   *  @return out_call   
+   */
+  private static function xHandle($method){
+  
+    $call_handler = self::getCall($method);
+    
+    $arg_handler = new out_arg('','Exit Called');
+    $arg_handler->type(out_arg::TYPE_STRING_LITERAL);
+    $call_handler->set($arg_handler);
+    return $call_handler;
+    
   }//method
   
   /**
@@ -249,15 +272,6 @@ class out {
   static function i(){
     $func_arg_list = func_get_args();
     self::put(self::iHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
-  }//method
-  
-  /**
-   *  same as {@link i()} but exits after
-   */
-  static function xi(){
-    $func_arg_list = func_get_args();
-    self::put(self::iHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
-    exit();
   }//method
   
   /**
@@ -398,14 +412,6 @@ class out {
   }//method
   
   /**
-   *  same as {@link t()} but exits after
-   */
-  static function xt(){
-    self::put(self::tHandle(__METHOD__),self::OUT_SCREEN);
-    exit();
-  }//method
-  
-  /**
    *  handles the t* calls
    *  
    *  @param  string  $method the externally called method
@@ -442,15 +448,6 @@ class out {
   static function m(){
     $func_arg_list = func_get_args();
     self::put(self::mHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
-  }//method
-  
-  /**
-   *  same as {@link m()} but exits after
-   */     
-  static function xm(){
-    $func_arg_list = func_get_args();
-    self::put(self::mHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
-    exit();
   }//method
   
   /**
@@ -568,14 +565,6 @@ class out {
    */ 
   static function p($title = null){
     self::put(self::pHandle(__METHOD__,$title),self::OUT_SCREEN);
-  }//method
-  
-  /**
-   *  similar to {@link p()} but exits after
-   */
-  static function xp($title = null){
-    self::put(self::pHandle(__METHOD__,$title),self::OUT_SCREEN);
-    exit();
   }//method
   
   /**
@@ -909,7 +898,7 @@ class out_call extends out_config_base implements IteratorAggregate {
   
     // canary...
     if(!$this->hasTrace()){ return ''; }//if
-  
+
     $format_handler = new out_format($this->config());
   
     $trace_list = $this->trace();
