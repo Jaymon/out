@@ -103,3 +103,4 @@ I also made the one letter function names and created default variable names.
 12-11-09 - made memory print out real and malloc'd memory, also added support for out::m() being able to go through an iteratable object also
 12-15-09 - fixed some parse name issues
 3-30-10 - got rid of the x* methods but added out::x() that will exit but print to the user where the exit was called from
+4-5-10 - added out::s*() methods to return the output as a string (good for easy logging). Also changed out::mem() to out::m() and out::m() to out::f(). Fixed an array bug where after a few nested levels it would push the next nested level way out (too many tabs).

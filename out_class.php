@@ -49,6 +49,11 @@ class out {
   const OUT_FILE = 1;
   
   /**
+   *  used internally to tell {@link put()} to return the generated output string
+   */
+  const OUT_STR = 2;
+  
+  /**
    *  hold the default out type
    *  
    *  can be any value of OUT_*
@@ -131,6 +136,14 @@ class out {
   }//method
 
   /**
+   *  similar to {@link e()} but returns the string instead
+   */
+  static function se(){
+    $func_arg_list = func_get_args();
+    return self::put(self::eHandle(__METHOD__,$func_arg_list),self::OUT_STR);
+  }//method
+
+  /**
    *  similar to {@link e()} but outputs to a file instead
    *  
    *  outputs to a file instead of stdout, the out.txt file will be in the current working directory   
@@ -138,7 +151,7 @@ class out {
    */
   static function fe(){
     $func_arg_list = func_get_args();
-    self::put(self::eHandle(__METHOD__,$func_arg_list),self::OUT_FILE);
+    return self::put(self::eHandle(__METHOD__,$func_arg_list),self::OUT_FILE);
   }//method
 
   /**
@@ -150,7 +163,7 @@ class out {
    */
   static function e(){
     $func_arg_list = func_get_args();
-    self::put(self::eHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
+    return self::put(self::eHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
   }//method
   
   /**
@@ -198,11 +211,19 @@ class out {
   }//method
   
   /**
+   *  similar to {@link b()} but returns the string
+   */        
+  static function sb(){
+    $func_arg_list = func_get_args();
+    return self::put(self::bHandle(__METHOD__,$func_arg_list),self::OUT_STR);
+  }//method
+  
+  /**
    *  similar to {@link b()} but outputs to a file instead
    */        
   static function fb(){
     $func_arg_list = func_get_args();
-    self::put(self::bHandle(__METHOD__,$func_arg_list),self::OUT_FILE);
+    return self::put(self::bHandle(__METHOD__,$func_arg_list),self::OUT_FILE);
   }//method
   
   /**
@@ -214,7 +235,7 @@ class out {
    */
   static function b(){
     $func_arg_list = func_get_args();
-    self::put(self::bHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
+    return self::put(self::bHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
   }//method
   
   /**
@@ -255,11 +276,19 @@ class out {
   }//method
   
   /**
+   *  similar to {@link i()} but returns string
+   */
+  static function si(){
+    $func_arg_list = func_get_args();
+    return self::put(self::iHandle(__METHOD__,$func_arg_list),self::OUT_STR);
+  }//method
+  
+  /**
    *  similar to {@link i()} but outputs to a file instead
    */
   static function fi(){
     $func_arg_list = func_get_args();
-    self::put(self::iHandle(__METHOD__,$func_arg_list),self::OUT_FILE);
+    return self::put(self::iHandle(__METHOD__,$func_arg_list),self::OUT_FILE);
   }//method
 
   /**
@@ -271,7 +300,7 @@ class out {
    */
   static function i(){
     $func_arg_list = func_get_args();
-    self::put(self::iHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
+    return self::put(self::iHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
   }//method
   
   /**
@@ -294,11 +323,19 @@ class out {
   }//method
   
   /**
-   *  similar to {@link c()} but outputs to a file instead
+   *  similar to {@link c()} but returns string
    */
   static function fc(){
     $func_arg_list = func_get_args();
-    self::put(self::cHandle(__METHOD__,$func_arg_list),self::OUT_FILE);
+    return self::put(self::cHandle(__METHOD__,$func_arg_list),self::OUT_STR);
+  }//method
+  
+  /**
+   *  similar to {@link c()} but outputs to a file instead
+   */
+  static function sc(){
+    $func_arg_list = func_get_args();
+    return self::put(self::cHandle(__METHOD__,$func_arg_list),self::OUT_FILE);
   }//method
 
   /**
@@ -310,7 +347,7 @@ class out {
    */
   static function c(){
     $func_arg_list = func_get_args();
-    self::put(self::cHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
+    return self::put(self::cHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
   }//method
   
   /**
@@ -333,11 +370,19 @@ class out {
   }//method
   
   /**
-   *  similar to {@link t()} but outputs to a file instead
+   *  similar to {@link m()} but returns string
    */
-  static function fmem(){
+  static function sm(){
     $func_arg_list = func_get_args();
-    self::put(self::memHandle(__METHOD__,$func_arg_list),self::OUT_FILE);
+    return self::put(self::mHandle(__METHOD__,$func_arg_list),self::OUT_STR);
+  }//method
+  
+  /**
+   *  similar to {@link m()} but outputs to a file instead
+   */
+  static function fm(){
+    $func_arg_list = func_get_args();
+    return self::put(self::mHandle(__METHOD__,$func_arg_list),self::OUT_FILE);
   }//method
 
   /**
@@ -345,9 +390,9 @@ class out {
    *  
    *  @since  12-07-09
    */ 
-  static function mem(){
+  static function m(){
     $func_arg_list = func_get_args();
-    self::put(self::memHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
+    return self::put(self::mHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
   }//method
   
   /**
@@ -357,7 +402,7 @@ class out {
    *  @param  array $func_arg_list  the args passed into $method
    *  @return out_call   
    */
-  private static function memHandle($method,$func_arg_list = array()){
+  private static function mHandle($method,$func_arg_list = array()){
     
     $call_handler = self::getCall($method,$func_arg_list);
     
@@ -371,12 +416,28 @@ class out {
     
       $malloc_mem_title = $format_handler->wrap('b','Malloc Memory');
       $malloc_mem_stats = $format_handler->bytes(memory_get_usage());
+      
+      $peak_real_mem_title = $peak_malloc_mem_title = '';
+      $peak_real_mem_stats = $peak_malloc_mem_stats = 'Only supported on php >=5.2';
+      if(function_exists('memory_get_peak_usage')){
+        
+        $peak_real_mem_title = $format_handler->wrap('b','Peak Real Memory');
+        $peak_real_mem_stats = $format_handler->bytes(memory_get_peak_usage());
+        
+        $peak_malloc_mem_title = $format_handler->wrap('b','Peak Malloc Memory');
+        $peak_malloc_mem_stats = $format_handler->bytes(memory_get_peak_usage(true));
+        
+      }//if
     
-      $arg_val = sprintf("%s\t%s\r\n%s\t%s",
+      $arg_val = sprintf("%s\t\t%s\r\n%s\t\t%s\r\n%s\t%s\r\n%s\t%s",
         $real_mem_title,
         $real_mem_stats,
         $malloc_mem_title,
-        $malloc_mem_stats
+        $malloc_mem_stats,
+        $peak_real_mem_title,
+        $peak_real_mem_stats,
+        $peak_malloc_mem_title,
+        $peak_malloc_mem_stats
       );
     
       $arg_handler = new out_arg('',$arg_val);
@@ -396,10 +457,17 @@ class out {
   }//method
   
   /**
+   *  similar to {@link t()} but returns string
+   */
+  static function st(){
+    return self::put(self::tHandle(__METHOD__),self::OUT_STR);
+  }//method
+  
+  /**
    *  similar to {@link t()} but outputs to a file instead
    */
   static function ft(){
-    self::put(self::tHandle(__METHOD__),self::OUT_FILE);
+    return self::put(self::tHandle(__METHOD__),self::OUT_FILE);
   }//method
 
   /**
@@ -408,7 +476,7 @@ class out {
    *  @since  4-10-09
    */ 
   static function t(){
-    self::put(self::tHandle(__METHOD__),self::OUT_SCREEN);
+    return self::put(self::tHandle(__METHOD__),self::OUT_SCREEN);
   }//method
   
   /**
@@ -429,25 +497,32 @@ class out {
     
   }//method
   
+  /**
+   *  similar to {@link m()} but returns string
+   */
+  static function sf(){
+    $func_arg_list = func_get_args();
+    return self::put(self::fHandle(__METHOD__,$func_arg_list),self::OUT_STR);
+  }//method
   
   /**
-   *  similar to {@link m()} but outputs to a file instead
+   *  similar to {@link F()} but outputs to a file instead
    */
-  static function fm(){
+  static function ff(){
     $func_arg_list = func_get_args();
-    self::put(self::mHandle(__METHOD__,$func_arg_list),self::OUT_FILE);
+    return self::put(self::fHandle(__METHOD__,$func_arg_list),self::OUT_FILE);
   }//method
 
   /**
-   *  given an array of objects, print out the output of the methods given      
+   *  given an array of objects, print out the output of the functions given      
    *  
    *  @since  11-9-09
    *  @param  mixed $arg,...  first passed in argument is an array of objects, every other passed
    *                          in argument is the name of a method of the objects
    */ 
-  static function m(){
+  static function f(){
     $func_arg_list = func_get_args();
-    self::put(self::mHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
+    return self::put(self::fHandle(__METHOD__,$func_arg_list),self::OUT_SCREEN);
   }//method
   
   /**
@@ -465,7 +540,7 @@ class out {
    *  @param  array $func_arg_list  the args passed into $method
    *  @return out_call   
    */
-  private static function mHandle($method,$func_arg_list = array()){
+  private static function fHandle($method,$func_arg_list = array()){
     
     $call_handler = null;
     $list = $func_arg_list[0];
@@ -547,12 +622,18 @@ class out {
     
   }//method
   
+  /**
+   *  similar to {@link p()} but returns string
+   */
+  static function sp($title = null){
+    return self::put(self::pHandle(__METHOD__,$title,false),self::OUT_STR);
+  }//method
   
   /**
    *  similar to {@link p()} but outputs to a file instead
    */
   static function fp($title = null){
-    self::put(self::pHandle(__METHOD__,$title,false),self::OUT_FILE);
+    return self::put(self::pHandle(__METHOD__,$title,false),self::OUT_FILE);
   }//method
 
   /**
@@ -564,7 +645,7 @@ class out {
    *  @since  11-08-09
    */ 
   static function p($title = null){
-    self::put(self::pHandle(__METHOD__,$title),self::OUT_SCREEN);
+    return self::put(self::pHandle(__METHOD__,$title),self::OUT_SCREEN);
   }//method
   
   /**
@@ -639,12 +720,18 @@ class out {
     
   }//method
   
+  /**
+   *  similar to {@link h()} but returns string
+   */
+  static function sh($count = 0){
+    return self::put(self::hHandle(__METHOD__,$count),self::OUT_STR);
+  }//method
   
   /**
    *  similar to {@link h()} but outputs to a file instead
    */
   static function fh($count = 0){
-    self::put(self::hHandle(__METHOD__,$count),self::OUT_FILE);
+    return self::put(self::hHandle(__METHOD__,$count),self::OUT_FILE);
   }//method
 
   /**
@@ -654,7 +741,7 @@ class out {
    *  @param  integer $count  the count you want
    */
   static function h($count = 0){
-    self::put(self::hHandle(__METHOD__,$count),self::OUT_SCREEN);
+    return self::put(self::hHandle(__METHOD__,$count),self::OUT_SCREEN);
   }//method
   
   /**
@@ -732,12 +819,14 @@ class out {
    *  
    *  @param  out_call  $call_handler the call object with all the call's info to be output 
    *  @param  integer $out_type how you want the output handled       
-   *  @return boolean
+   *  @return mixed
    */
   private static function put($call_handler,$out_type = self::OUT_SCREEN){
   
     // canary...
     if(empty($call_handler)){ return false; }//if
+  
+    $ret_mix = true;
   
     switch($out_type){
     
@@ -766,9 +855,15 @@ class out {
         file_put_contents(self::$OUT_TO,$call_handler->out(),(FILE_APPEND | LOCK_EX));
         break;
         
+      case self::OUT_STR:
+      
+        // we want plain text for the file...
+        $call_handler->config()->outType(out_config::OUT_TXT);
+        $ret_mix = $call_handler->out();
+        
     }//switch
     
-    return true;
+    return $ret_mix;
   
   }//method
   
@@ -2095,8 +2190,8 @@ class out_arg extends out_config_base {
       }//if/else
       $ret_str .= "\r\n";
     }//method
-  
-    $prefix = str_repeat($this->indent,($deep > 1) ? ($deep - 1) : $deep);
+
+    $prefix = str_repeat($this->indent,($deep > 1) ? 1 : $deep);
   
     return trim($format_handler->indent($prefix,$ret_str.')'))."\r\n";
   
