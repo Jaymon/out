@@ -25,7 +25,10 @@
  *        2 - if no tostring, try reflection like out::i() and just get the properties, don't print out objects though,
  *            just do CLASSNAME instance, or recurse maybe 3 deep or something
  *        3 - just print CLASSNAME instance if 1 and 2 fail       
- *  
+ *    3 - maybe I can do something with http://php.net/manual/en/function.debug-zval-dump.php
+ *    4 - for memory, I could try passing in an object and then taking the memory and then unsetting the object
+ *        and seeing how much memory is freed  
+ * 
  *  KNOWN BUGS:
  *    1 - 2 function calls on the same line (eg, out::e($one); out::e($two)) the second
  *         function will get $one as its var name. This could probably be solved by having a static map that
@@ -1167,11 +1170,20 @@ class out_call extends out_config_base implements IteratorAggregate {
     ///for($i=$last_backtrace; $i>=0; $i--){
     for($i = 0; $i < count($backtrace_list); $i++){
       
-      $trace_list[] = new out_file(
+      /* $trace_list[] = new out_file(
         empty($backtrace_list[$i]['file']) ? 'unknown' : $backtrace_list[$i]['file'],
         empty($backtrace_list[$i]['line']) ? 'unknown' : $backtrace_list[$i]['line'],
         empty($backtrace_list[$i]['class']) ? 'unknown' : $backtrace_list[$i]['class'],
-        empty($backtrace_list[$i]['function']) ? 'unknown' : $backtrace_list[$i]['function']
+        empty($backtrace_list[$i]['function']) ? 'unknown' : $backtrace_list[$i]['function'],
+        empty($backtrace_list[$i]['args']) ? array() : $backtrace_list[$i]['args']
+      ); */
+      
+      $trace_list[] = new out_file(
+        empty($backtrace_list[$i]['file']) ? '' : $backtrace_list[$i]['file'],
+        empty($backtrace_list[$i]['line']) ? '' : $backtrace_list[$i]['line'],
+        empty($backtrace_list[$i]['class']) ? '' : $backtrace_list[$i]['class'],
+        empty($backtrace_list[$i]['function']) ? '' : $backtrace_list[$i]['function'],
+        empty($backtrace_list[$i]['args']) ? array() : $backtrace_list[$i]['args']
       );
       
       // canary...
@@ -2409,12 +2421,13 @@ class out_format extends out_config_base {
 
 class out_file extends out_config_base {
 
-  function __construct($path = '',$line = '',$class = '',$function = ''){
+  function __construct($path = '',$line = '',$class = '',$function = '',$function_args = array()){
   
     $this->path($path);
     $this->line($line);
     $this->className($class);
     $this->funcName($function);
+    $this->funcArgs($function_args);
   
   }//method
 
@@ -2428,12 +2441,78 @@ class out_file extends out_config_base {
   function hasClassName(){ return $this->has('out_file::class'); }//method
   function funcName($val = null){ return $this->val('out_file::function',$val,''); }//method
   function hasFuncName(){ return $this->has('out_file::function'); }//method
+  function funcArgs($val = null){ return $this->val('out_file::function_args',$val,''); }//method
+  function hasFuncArgs(){ return $this->has('out_file::function_args'); }//method
   
   function getMethod(){
   
-    $class = $this->hasClassName() ? $this->className() : 'unknown';
-    $func = $this->hasFuncName() ? $this->funcName() : 'unknown';
-    return sprintf('%s::%s()',$class,$func);
+    $method_call = '';
+    if(!$this->hasClassName()){
+    
+      if($this->hasFuncName()){ $method_call = $this->funcName(); }//if
+    
+    }else{
+      
+      if(!$this->hasFuncName()){
+      
+        $method_call = $this->className();
+      
+      }else{
+      
+        $class = $this->className();
+        $method = $this->funcName();
+      
+        $method_reflect = new ReflectionMethod($class,$method);
+        $method_modifiers = join(' ',Reflection::getModifierNames($method_reflect->getModifiers()));
+        
+        $method_caller = '->';
+        if(mb_stripos($method_modifiers,'static') !== false){
+          $method_caller = '::';
+        }//if
+        
+        $method_call = sprintf(
+          '%s %s%s%s',
+          $method_modifiers,
+          $class,
+          $method_caller,
+          $method
+        );
+        
+      }//if/else
+      
+    }//if/else
+    
+    $method_args = '';
+    
+    if($this->hasFuncArgs()){
+    
+      $arg_list = array();
+    
+      foreach($this->funcArgs() as $arg){
+        
+        if(is_object($arg)){
+          $arg_list[] = get_class($arg);
+        }else{
+          if(is_array($arg)){
+            $arg_list[] = sprintf('Array(%s)',count($arg));
+          }else if(is_bool($arg)){
+            $arg_list[] = $arg ? 'TRUE' : 'FALSE';
+          }else if(is_null($arg)){
+            $arg_list[] = 'NULL';
+          }else if(is_string($arg)){
+            $arg_list[] = sprintf('"%s"',$arg);
+          }else{
+            $arg_list[] = $arg;
+          }//if/else
+        }//if/else
+      
+      }//foreach
+      
+      $method_args = join(', ',$arg_list);
+      
+    }//if
+    
+    return sprintf('%s(%s)',$method_call,$method_args);
     
   }//method
   
