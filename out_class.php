@@ -835,7 +835,19 @@ class out {
     
       case self::OUT_SCREEN:
   
-        echo $call_handler;
+        if($call_handler->config()->isCli()){
+        
+          // if we're in cli write to std_err instead of std_out...
+          $fp = fopen('php://stderr','a+');
+          fwrite($fp,$call_handler->out());
+          fclose($fp);
+        
+        }else{
+          
+          echo $call_handler;
+          
+        }//if/else
+        
         break;
         
       case self::OUT_FILE:
@@ -1125,12 +1137,19 @@ class out_call extends out_config_base implements IteratorAggregate {
         $arg_str = $arg->out();
       }//if/else
     
-      $ret_str[] = $format_handler->wrap('pre',sprintf("%s %s",$arg_str,$this->file()->out(true,false)),$pre_style);
+      ///$ret_str[] = $format_handler->wrap('pre',sprintf("%s %s",$arg_str,$this->file()->out(true,false)),$pre_style);
+      $ret_str[] = $arg_str;
     
     }//foreach
   
-    $ret_str[] = '';
-    return join("\r\n\r\n",$ret_str);
+    ///$ret_str[] = '';
+    ///return join("\r\n\r\n",$ret_str);
+    
+    return $format_handler->wrap(
+      'pre',
+      sprintf("%s %s",join("\r\n\r\n",$ret_str),$this->file()->out(true,false)),
+      $pre_style
+    )."\r\n\r\n";
 
   }//method
 
@@ -2356,14 +2375,14 @@ class out_format extends out_config_base {
     if(empty($path)){ return ''; }//if
     
     $file_path = explode(DIRECTORY_SEPARATOR,$path);
-    $doc_root = isset($_SERVER['DOCUMENT_ROOT'])
+    $doc_root = !empty($_SERVER['DOCUMENT_ROOT'])
       ? $_SERVER['DOCUMENT_ROOT']
-      : (isset($_ENV['DOCUMENT_ROOT']) ? $_ENV['DOCUMENT_ROOT'] : '');
-    
+      : (!empty($_ENV['DOCUMENT_ROOT']) ? $_ENV['DOCUMENT_ROOT'] : getcwd());
+
     // we use a preg with both directory separators because apache will always return /, but we wan't to be safe...
-    $root_path = empty($doc_root) ? array() : preg_split('#\\/#u',$doc_root);
+    $root_path = empty($doc_root) ? array() : explode('/',str_replace('\\','/',$doc_root));
     $slimmed_path = array_diff($file_path,$root_path);
-    
+
     return DIRECTORY_SEPARATOR.implode(DIRECTORY_SEPARATOR,$slimmed_path);
     
   }//method
@@ -2612,6 +2631,14 @@ class out_config extends out_base {
   }//method
 
   /**
+   *  return true if in CLI
+   *  
+   *  @since  10-12-10   
+   *  @return boolean
+   */
+  public function isCli(){ return (strncasecmp(PHP_SAPI, 'cli', 3) === 0); }//method
+
+  /**
    *  get/set the output type, this allows plain text output for certain things but
    *  rich text (eg, html) for other things   
    *  
@@ -2625,7 +2652,7 @@ class out_config extends out_base {
       if($val < 1){
         
         // if we're on the command line we want to default to plain text...
-        if(strncasecmp(PHP_SAPI, 'cli', 3) === 0){
+        if($this->isCli()){
           $val = self::OUT_TXT;
         }else{
           $val = self::OUT_HTML;
