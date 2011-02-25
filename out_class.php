@@ -69,7 +69,7 @@ class out {
    *  
    *  @var  boolean
    */     
-  private static $PRINT_OBJECTS = true;
+  private static $PRINT_OBJECTS = false;
   
   /**
    *  if you use the @link *f() functions then the name of the file outputted
@@ -183,7 +183,7 @@ class out {
   /**
    *  similar to {@link x()} but outputs to a file instead
    */
-  static function fx($count = 0){
+  static function fx(){
     self::put(self::xHandle(__METHOD__),self::OUT_FILE);
     exit();
   }//method
@@ -191,7 +191,7 @@ class out {
   /**
    *  calling this method exits the program but lets the user know where it exited
    */
-  static function x($count = 0){
+  static function x(){
     self::put(self::xHandle(__METHOD__),self::OUT_SCREEN);
     exit();
   }//method
@@ -461,39 +461,42 @@ class out {
   
   /**
    *  similar to {@link t()} but returns string
+   *  @param  integer $history  how many lines back you want to get back   
    */
-  static function st(){
-    return self::put(self::tHandle(__METHOD__),self::OUT_STR);
+  static function st($history = 0){
+    return self::put(self::tHandle(__METHOD__,$history),self::OUT_STR);
   }//method
   
   /**
    *  similar to {@link t()} but outputs to a file instead
+   *  @param  integer $history  how many lines back you want to get back   
    */
-  static function ft(){
-    return self::put(self::tHandle(__METHOD__),self::OUT_FILE);
+  static function ft($history = 0){
+    return self::put(self::tHandle(__METHOD__,$history),self::OUT_FILE);
   }//method
 
   /**
    *  print out the call backtrace history
    *  
    *  @since  4-10-09
+   *  @param  integer $history  how many lines back you want to get back   
    */ 
-  static function t(){
-    return self::put(self::tHandle(__METHOD__),self::OUT_SCREEN);
+  static function t($history = 0){
+    return self::put(self::tHandle(__METHOD__,$history),self::OUT_SCREEN);
   }//method
   
   /**
    *  handles the t* calls
    *  
    *  @param  string  $method the externally called method
-   *  @param  array $func_arg_list  the args passed into $method
+   *  @param  integer $history  how many lines back you want to get back
    *  @return out_call   
    */
-  private static function tHandle($method,$func_arg_list = array()){
+  private static function tHandle($method,$history = 0){
     
-    $call_handler = self::getCall($method,$func_arg_list);
+    $call_handler = self::getCall($method);
     
-    $arg_handler = new out_arg('',$call_handler->outTrace());
+    $arg_handler = new out_arg('',$call_handler->outTrace($history));
     $arg_handler->type(out_arg::TYPE_STRING_GENERATED);
     $call_handler->set($arg_handler);
     return $call_handler;
@@ -1002,9 +1005,10 @@ class out_call extends out_config_base implements IteratorAggregate {
   /**
    *  return a stack trace of the current call
    *  
+   *  @param  integer $history  how many lines back you want to get back   
    *  @return string  a nicely formatted stacktrace suitable for output
    */
-  function outTrace(){
+  function outTrace($history = 0){
   
     // canary...
     if(!$this->hasTrace()){ return ''; }//if
@@ -1027,17 +1031,21 @@ class out_call extends out_config_base implements IteratorAggregate {
     $trace_list = array_slice($trace_list,0,($trace_count - 1));
     // reverse the list so last call is at the top...
     $trace_list = array_reverse($trace_list,true);
-    
+    $trace_history = 0;
     foreach($trace_list as $key => $file_map){
+    
+      // canary, only go for the amount of rows requested...
+      if(($history > 0) && ($trace_history >= $history)){ break; }//if
     
       $file_map->config($this->config());
       $trace_lines[] = sprintf("\t\t%'02d - %s\t\t%s",$key,$file_map->out(false,false),$file_map->getMethod());
+      $trace_history++;
     
     }//foreach
     
     $trace_lines[] = ''; // we want a newline at the end also
     
-    return implode("\r\n",$trace_lines);
+    return implode(PHP_EOL,$trace_lines);
     
   }//method
   
@@ -2637,6 +2645,18 @@ class out_config extends out_base {
    *  @return boolean
    */
   public function isCli(){ return (strncasecmp(PHP_SAPI, 'cli', 3) === 0); }//method
+  
+  /**
+   *  return true if in AJAX
+   *  
+   *  @since  2-21-11 
+   *  @return boolean
+   */
+  public function isAjax(){
+    // canary...
+    if(empty($_SERVER['HTTP_X_REQUESTED_WITH'])){ return false; }//if
+    return (mb_stripos($_SERVER['HTTP_X_REQUESTED_WITH'],'XMLHttpRequest') !== false);
+  }//method
 
   /**
    *  get/set the output type, this allows plain text output for certain things but
@@ -2651,8 +2671,8 @@ class out_config extends out_base {
       // set the out type if it hasn't been explicitely set...
       if($val < 1){
         
-        // if we're on the command line we want to default to plain text...
-        if($this->isCli()){
+        // if we're on the command line or in ajax we want to default to plain text...
+        if($this->isCli() || $this->isAjax()){
           $val = self::OUT_TXT;
         }else{
           $val = self::OUT_HTML;
