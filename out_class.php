@@ -1025,7 +1025,7 @@ class out_call extends out_config_base implements IteratorAggregate {
       : $trace_list[($trace_count - 2)]->getMethod();
     
     $trace_lines[] = $format_handler->wrap('b',$method);
-    $trace_lines[] = "\tbacktrace:";
+    $trace_lines[] = "  backtrace:";
     
     // get rid of the last call since it is the out call...
     $trace_list = array_slice($trace_list,0,($trace_count - 1));
@@ -1038,7 +1038,14 @@ class out_call extends out_config_base implements IteratorAggregate {
       if(($history > 0) && ($trace_history >= $history)){ break; }//if
     
       $file_map->config($this->config());
-      $trace_lines[] = sprintf("\t\t%'02d - %s\t\t%s",$key,$file_map->out(false,false),$file_map->getMethod());
+      
+      $file = $file_map->out(false,false);
+      if(empty($file)){ $file = 'UNKNOWN'; }//if
+      
+      $trace_lines[] = sprintf("    %'02d - %s",$key,$file_map->getMethod());
+      $trace_lines[] = sprintf('      %s',$file);
+      
+      ///$trace_lines[] = sprintf("\t\t%'02d - %s\t\t%s",$key,$file_map->out(false,false),$file_map->getMethod());
       $trace_history++;
     
     }//foreach

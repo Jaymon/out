@@ -106,3 +106,4 @@ I also made the one letter function names and created default variable names.
 4-5-10 - added out::s*() methods to return the output as a string (good for easy logging). Also changed out::mem() to out::m() and out::m() to out::f(). Fixed an array bug where after a few nested levels it would push the next nested level way out (too many tabs).
 2-21-11 - added default text support for Ajax calls
 2-24-11 - added a history arg to out::t() so that you can get say, only the first 3 rows of the trace
+2-25-11 - changes the layout of out::t() to be a little easier to read
