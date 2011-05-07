@@ -57,6 +57,11 @@ class out {
   const OUT_STR = 2;
   
   /**
+   *  used internally to tell {@link put() to use tht error log for the output
+   */
+  const OUT_LOG = 3;
+  
+  /**
    *  hold the default out type
    *  
    *  can be any value of OUT_*
@@ -136,6 +141,17 @@ class out {
   
     self::$OUT_TO = $name;
   
+  }//method
+
+  /**
+   *  similar to {@link e()} but outputs to a file instead
+   *  
+   *  outputs to a file instead of stdout, the out.txt file will be in the current working directory   
+   *  usually whatever directory the php file that is calling out is in.
+   */
+  static function le(){
+    $func_arg_list = func_get_args();
+    return self::put(self::eHandle(__METHOD__,$func_arg_list),self::OUT_LOG);
   }//method
 
   /**
@@ -878,6 +894,13 @@ class out {
         // we want plain text for the file...
         $call_handler->config()->outType(out_config::OUT_TXT);
         $ret_mix = $call_handler->out();
+        break;
+        
+      case self::OUT_LOG:
+      
+        // http://www.php.net/manual/en/function.error-log.php
+        error_log($call_handler->out(),0);
+        break;
         
     }//switch
     
