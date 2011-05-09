@@ -27,7 +27,10 @@
  *        3 - just print CLASSNAME instance if 1 and 2 fail       
  *    3 - maybe I can do something with http://php.net/manual/en/function.debug-zval-dump.php
  *    4 - for memory, I could try passing in an object and then taking the memory and then unsetting the object
- *        and seeing how much memory is freed  
+ *        and seeing how much memory is freed 
+ *    5 - add getrusage
+ *        http://php.net/manual/en/function.getrusage.php
+ *        http://bytes.com/topic/python/answers/597464-finding-cpu-time-spent-my-program    
  * 
  *  KNOWN BUGS:
  *    1 - 2 function calls on the same line (eg, out::e($one); out::e($two)) the second
