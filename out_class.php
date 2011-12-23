@@ -1154,37 +1154,45 @@ class out_call extends out_config_base implements IteratorAggregate {
   function __toString(){ return $this->out(); }//method
   function out(){
   
-    $ret_str = array();
-    $format_handler = new out_format($this->config());
-    
-    $pre_style = 'text-align: left; padding-left: 10px;';
-    $pre_style .= 'white-space: pre-wrap;'; /* css-3 */
-    $pre_style .= 'white-space: -moz-pre-wrap;'; /* Mozilla, since 1999 */
-    $pre_style .= 'white-space: -pre-wrap;'; /* Opera 4-6 */
-    $pre_style .= 'white-space: -o-pre-wrap;'; /* Opera 7 */
-    $pre_style .= 'word-wrap: break-word;'; /* Internet Explorer 5.5+ */
-    $pre_style .= 'font: inherit;';
-    
-    foreach($this as $arg){
-    
-      $arg_str = '';
-      if($this->config()->outInfo()){
-        $arg_str = $arg->outInfo($this->file()->className());
-      }else if($this->config()->outChar()){
-        $arg_str = $arg->outChar();
-      }else if($this->config()->outMem()){
-        $arg_str = $arg->outMem();
-      }else{
-        $arg_str = $arg->out();
-      }//if/else
-    
-      ///$ret_str[] = $format_handler->wrap('pre',sprintf("%s %s",$arg_str,$this->file()->out(true,false)),$pre_style);
-      $ret_str[] = $arg_str;
-    
-    }//foreach
+    try{
   
-    ///$ret_str[] = '';
-    ///return join("\r\n\r\n",$ret_str);
+      $ret_str = array();
+      $format_handler = new out_format($this->config());
+      
+      $pre_style = 'text-align: left; padding-left: 10px;';
+      $pre_style .= 'white-space: pre-wrap;'; /* css-3 */
+      $pre_style .= 'white-space: -moz-pre-wrap;'; /* Mozilla, since 1999 */
+      $pre_style .= 'white-space: -pre-wrap;'; /* Opera 4-6 */
+      $pre_style .= 'white-space: -o-pre-wrap;'; /* Opera 7 */
+      $pre_style .= 'word-wrap: break-word;'; /* Internet Explorer 5.5+ */
+      $pre_style .= 'font: inherit;';
+      
+      foreach($this as $arg){
+      
+        $arg_str = '';
+        if($this->config()->outInfo()){
+          $arg_str = $arg->outInfo($this->file()->className());
+        }else if($this->config()->outChar()){
+          $arg_str = $arg->outChar();
+        }else if($this->config()->outMem()){
+          $arg_str = $arg->outMem();
+        }else{
+          $arg_str = $arg->out();
+        }//if/else
+      
+        ///$ret_str[] = $format_handler->wrap('pre',sprintf("%s %s",$arg_str,$this->file()->out(true,false)),$pre_style);
+        $ret_str[] = $arg_str;
+      
+      }//foreach
+    
+      ///$ret_str[] = '';
+      ///return join("\r\n\r\n",$ret_str);
+      
+    }catch(Exception $e){
+
+      $ret_str = array($e->getTraceAsString());
+    
+    }//try/catch
     
     return $format_handler->wrap(
       'pre',
